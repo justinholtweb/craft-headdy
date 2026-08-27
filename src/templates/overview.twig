@@ -1,0 +1,82 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+
+{% set title = "Headdy"|t('headdy') %}
+{% set selectedSubnavItem = 'overview' %}
+
+{% block content %}
+    <div class="readable">
+        <h2>{{ "Your storefront API"|t('headdy') }}</h2>
+        <p><code style="user-select:all;">{{ apiUrl }}</code></p>
+    </div>
+
+    <h2>{{ "Configuration"|t('headdy') }}</h2>
+
+    <table class="data fullwidth">
+        <tbody>
+        {% for check in checks %}
+            <tr>
+                <td style="width: 2em;">
+                    {% if check.level == 'ok' %}
+                        <span data-icon="check" title="{{ 'OK'|t('headdy') }}"></span>
+                    {% elseif check.level == 'warning' %}
+                        <span data-icon="alert" title="{{ 'Warning'|t('headdy') }}"></span>
+                    {% else %}
+                        <span class="error" data-icon="alert" title="{{ 'Problem'|t('headdy') }}"></span>
+                    {% endif %}
+                </td>
+                <td>
+                    <strong>{{ check.label }}</strong>
+                    {% if check.detail is defined %}<div class="light">{{ check.detail }}</div>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if summary %}
+        <h2>{{ "Last 24 hours"|t('headdy') }}</h2>
+        <table class="data fullwidth">
+            <tbody>
+            <tr><th>{{ "Requests"|t('headdy') }}</th><td>{{ summary.total }}</td></tr>
+            <tr><th>{{ "Successful"|t('headdy') }}</th><td>{{ summary.ok }}</td></tr>
+            <tr><th>{{ "Client errors (4xx)"|t('headdy') }}</th><td>{{ summary.clientErrors }}</td></tr>
+            <tr><th>{{ "Server errors (5xx)"|t('headdy') }}</th><td>{{ summary.serverErrors }}</td></tr>
+            <tr><th>{{ "Average response time"|t('headdy') }}</th><td>{{ summary.avgDurationMs }} ms</td></tr>
+            </tbody>
+        </table>
+    {% endif %}
+
+    <h2>{{ "Endpoints"|t('headdy') }}</h2>
+
+    <table class="data fullwidth">
+        <thead>
+        <tr>
+            <th>{{ "Method"|t('headdy') }}</th>
+            <th>{{ "Path"|t('headdy') }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for route in routes %}
+            <tr>
+                <td><code>{{ route.method }}</code></td>
+                <td><code>{{ route.path }}</code></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="readable">
+        <h2>{{ "Getting started"|t('headdy') }}</h2>
+        <pre style="white-space: pre-wrap;"><code># {{ "Create a cart with an item already in it"|t('headdy') }}
+curl -X POST '{{ apiUrl }}/carts' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Headdy-Key: hd_pk_…' \
+  -d '{"items":[{"purchasableId":123,"qty":1}]}'
+
+# {{ "The response carries cart.token — send it back on every later call"|t('headdy') }}
+curl '{{ apiUrl }}/carts/current' \
+  -H 'X-Headdy-Key: hd_pk_…' \
+  -H 'X-Headdy-Cart: hdc_…'</code></pre>
+    </div>
+{% endblock %}

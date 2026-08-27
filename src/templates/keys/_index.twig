@@ -1,0 +1,68 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "API keys"|t('headdy') %}
+{% set selectedSubnavItem = 'keys' %}
+
+{% block actionButton %}
+    <a href="{{ url('headdy/keys/new') }}" class="btn submit add icon">{{ "New API key"|t('headdy') }}</a>
+{% endblock %}
+
+{% block content %}
+    {% if keys is empty %}
+        <div class="zilch">
+            <p>{{ "No API keys yet."|t('headdy') }}</p>
+            <p class="light">{{ "Unless authentication is set to “None”, every request is rejected until one exists."|t('headdy') }}</p>
+        </div>
+    {% else %}
+        <table class="data fullwidth">
+            <thead>
+            <tr>
+                <th>{{ "Name"|t('headdy') }}</th>
+                <th>{{ "Public key"|t('headdy') }}</th>
+                <th>{{ "Scopes"|t('headdy') }}</th>
+                <th>{{ "Last used"|t('headdy') }}</th>
+                <th>{{ "Status"|t('headdy') }}</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for key in keys %}
+                <tr data-id="{{ key.id }}">
+                    <td><a href="{{ url('headdy/keys/' ~ key.id) }}">{{ key.name }}</a></td>
+                    <td><code style="user-select:all;">{{ key.publicKey }}</code></td>
+                    <td class="light">{{ key.scopes|join(', ') ?: '—' }}</td>
+                    <td class="light">{{ key.lastUsedAt ? key.lastUsedAt|datetime('short') : "Never"|t('headdy') }}</td>
+                    <td>
+                        {% if not key.enabled %}
+                            <span class="status off"></span> {{ "Disabled"|t('headdy') }}
+                        {% elseif key.isExpired() %}
+                            <span class="status off"></span> {{ "Expired"|t('headdy') }}
+                        {% else %}
+                            <span class="status live"></span> {{ "Active"|t('headdy') }}
+                        {% endif %}
+                    </td>
+                    <td class="thin">
+                        <button type="button" class="delete icon headdy-delete-key" title="{{ 'Delete'|t('headdy') }}"></button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {% js %}
+        document.querySelectorAll('.headdy-delete-key').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var row = button.closest('tr');
+
+                if (!confirm({{ "Delete this API key? Any front end using it stops working immediately."|t('headdy')|json_encode|raw }})) {
+                    return;
+                }
+
+                Craft.sendActionRequest('POST', 'headdy/keys/delete', { data: { id: row.dataset.id } })
+                    .then(function() { row.remove(); })
+                    .catch(function() { Craft.cp.displayError(); });
+            });
+        });
+    {% endjs %}
+{% endblock %}

@@ -1,0 +1,247 @@
+{% import "_includes/forms" as forms %}
+
+{% set apiUrl = plugin.getApiUrl() %}
+
+<div class="readable">
+    <blockquote class="note">
+        <p>{{ "The storefront API is mounted at"|t('headdy') }} <code>{{ apiUrl }}</code>.</p>
+        <p>{{ "Head to"|t('headdy') }} <a href="{{ url('headdy') }}">{{ "Headdy → Overview"|t('headdy') }}</a>
+            {{ "for a configuration check and the full route list."|t('headdy') }}</p>
+    </blockquote>
+</div>
+
+<h2>{{ "The API"|t('headdy') }}</h2>
+
+{{ forms.lightswitchField({
+    label: "Enabled"|t('headdy'),
+    instructions: "When off, every endpoint answers 503 with the code “api_disabled”. The routes stay registered so a misconfigured base path is still distinguishable from a switched-off API."|t('headdy'),
+    id: 'enabled',
+    name: 'enabled',
+    on: settings.enabled,
+    errors: settings.getErrors('enabled'),
+}) }}
+
+{{ forms.autosuggestField({
+    label: "Base path"|t('headdy'),
+    instructions: "The URI the API is mounted at, without a leading or trailing slash. The API version is appended automatically."|t('headdy'),
+    id: 'basePath',
+    name: 'basePath',
+    value: settings.basePath,
+    suggestEnvVars: true,
+    errors: settings.getErrors('basePath'),
+}) }}
+
+{{ forms.selectField({
+    label: "Authentication"|t('headdy'),
+    instructions: "How callers identify themselves. A **public key** is safe to compile into browser JavaScript — it identifies and scopes a caller, it does not authenticate one. A **secret** is for server-side callers only."|t('headdy')|md,
+    id: 'authMode',
+    name: 'authMode',
+    value: settings.authMode,
+    options: [
+        { label: "Public key (recommended)"|t('headdy'), value: 'publicKey' },
+        { label: "Public key + secret"|t('headdy'), value: 'secret' },
+        { label: "None — anyone may call the API"|t('headdy'), value: 'open' },
+    ],
+    errors: settings.getErrors('authMode'),
+}) }}
+
+<h2>{{ "Browsers"|t('headdy') }}</h2>
+
+{{ forms.editableTableField({
+    label: "Allowed origins"|t('headdy'),
+    instructions: "Origins that may call the API from a browser, as `https://shop.example.com` with no trailing slash. **Leave this empty to allow any origin** — CORS is not what protects this API (the bearer token is, and no cookie is ever sent), so an empty list is safe. Naming your front ends is still one less way for a leaked key to be used."|t('headdy')|md,
+    id: 'allowedOrigins',
+    name: 'allowedOrigins',
+    cols: {
+        value: { type: 'singleline', heading: "Origin"|t('headdy'), placeholder: 'https://shop.example.com' },
+    },
+    rows: settings.allowedOrigins|map(o => { value: (o is iterable ? o.value ?? '' : o) }),
+    allowAdd: true,
+    allowDelete: true,
+    allowReorder: false,
+    errors: settings.getErrors('allowedOrigins'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Allow credentials"|t('headdy'),
+    instructions: "Sends `Access-Control-Allow-Credentials`. Only needed if your front end deliberately sends cookies — Headdy itself never does. Cannot be combined with a `*` origin; browsers reject that pair."|t('headdy')|md,
+    id: 'allowCredentials',
+    name: 'allowCredentials',
+    on: settings.allowCredentials,
+    errors: settings.getErrors('allowCredentials'),
+}) }}
+
+<h2>{{ "Payment redirects"|t('headdy') }}</h2>
+
+<div class="readable">
+    <p class="light">
+        {{ "Craft's own checkout hashes return URLs into a Twig form, which a JSON client cannot reproduce. Headdy validates them against this list instead. **While it is empty, off-site gateways cannot be driven from the API** — on-site gateways are unaffected."|t('headdy')|md }}
+    </p>
+</div>
+
+{{ forms.editableTableField({
+    label: "Allowed redirect origins"|t('headdy'),
+    instructions: "Origins a caller may hand to a gateway as a return or cancel URL. Relative paths are always allowed."|t('headdy'),
+    id: 'allowedRedirectOrigins',
+    name: 'allowedRedirectOrigins',
+    cols: {
+        value: { type: 'singleline', heading: "Origin"|t('headdy'), placeholder: 'https://shop.example.com' },
+    },
+    rows: settings.allowedRedirectOrigins|map(o => { value: (o is iterable ? o.value ?? '' : o) }),
+    allowAdd: true,
+    allowDelete: true,
+    allowReorder: false,
+    errors: settings.getErrors('allowedRedirectOrigins'),
+}) }}
+
+<h2>{{ "Tokens"|t('headdy') }}</h2>
+
+{{ forms.textField({
+    label: "Cart token lifetime"|t('headdy'),
+    instructions: "Seconds. The default is 30 days."|t('headdy'),
+    id: 'cartTokenDuration',
+    name: 'cartTokenDuration',
+    value: settings.cartTokenDuration,
+    type: 'number',
+    size: 10,
+    errors: settings.getErrors('cartTokenDuration'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Sliding expiry"|t('headdy'),
+    instructions: "Pushes a cart token's expiry back out every time it is used, so an active shopper's cart never expires mid-session."|t('headdy'),
+    id: 'slidingCartTokens',
+    name: 'slidingCartTokens',
+    on: settings.slidingCartTokens,
+}) }}
+
+{{ forms.textField({
+    label: "Customer token lifetime"|t('headdy'),
+    instructions: "Seconds. Short on purpose — the refresh token is what keeps a session alive."|t('headdy'),
+    id: 'customerTokenDuration',
+    name: 'customerTokenDuration',
+    value: settings.customerTokenDuration,
+    type: 'number',
+    size: 10,
+    errors: settings.getErrors('customerTokenDuration'),
+}) }}
+
+{{ forms.textField({
+    label: "Refresh token lifetime"|t('headdy'),
+    instructions: "Seconds. Refresh tokens rotate on use: the old one is burned."|t('headdy'),
+    id: 'customerRefreshDuration',
+    name: 'customerRefreshDuration',
+    value: settings.customerRefreshDuration,
+    type: 'number',
+    size: 10,
+    errors: settings.getErrors('customerRefreshDuration'),
+}) }}
+
+<h2>{{ "Customers"|t('headdy') }}{% if not plugin.isPro() %} <span class="light">— {{ "Pro"|t('headdy') }}</span>{% endif %}</h2>
+
+{{ forms.lightswitchField({
+    label: "Allow customer sign-in"|t('headdy'),
+    instructions: "Enables the customer token endpoints. Control panel accounts are always refused, whatever this is set to."|t('headdy'),
+    id: 'allowCustomerLogin',
+    name: 'allowCustomerLogin',
+    on: settings.allowCustomerLogin,
+    disabled: not plugin.isPro(),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Allow registration"|t('headdy'),
+    instructions: "Lets `POST /customers` create accounts."|t('headdy')|md,
+    id: 'allowCustomerRegistration',
+    name: 'allowCustomerRegistration',
+    on: settings.allowCustomerRegistration,
+    disabled: not plugin.isPro(),
+}) }}
+
+<h2>{{ "Catalog and GraphQL"|t('headdy') }}</h2>
+
+{{ forms.lightswitchField({
+    label: "Catalog endpoints"|t('headdy'),
+    instructions: "Serve products and variants over REST. Turn off if your front end reads the catalog through Craft's own GraphQL."|t('headdy'),
+    id: 'catalogEnabled',
+    name: 'catalogEnabled',
+    on: settings.catalogEnabled,
+}) }}
+
+{{ forms.lightswitchField({
+    label: "GraphQL cart mutations"|t('headdy'),
+    instructions: "Registers the `headdyCart*` mutations and the `headdyCart` query on Craft's GraphQL schema."|t('headdy')|md,
+    id: 'graphqlEnabled',
+    name: 'graphqlEnabled',
+    on: settings.graphqlEnabled,
+    disabled: not plugin.isPro(),
+}) }}
+
+{{ forms.textField({
+    label: "Default page size"|t('headdy'),
+    id: 'defaultPageSize',
+    name: 'defaultPageSize',
+    value: settings.defaultPageSize,
+    type: 'number',
+    size: 6,
+    errors: settings.getErrors('defaultPageSize'),
+}) }}
+
+{{ forms.textField({
+    label: "Maximum page size"|t('headdy'),
+    id: 'maxPageSize',
+    name: 'maxPageSize',
+    value: settings.maxPageSize,
+    type: 'number',
+    size: 6,
+    errors: settings.getErrors('maxPageSize'),
+}) }}
+
+<h2>{{ "Limits and logging"|t('headdy') }}</h2>
+
+{{ forms.textField({
+    label: "Rate limit"|t('headdy'),
+    instructions: "Requests per minute per API key. 0 for no limit. A key can override this."|t('headdy'),
+    id: 'rateLimit',
+    name: 'rateLimit',
+    value: settings.rateLimit,
+    type: 'number',
+    size: 8,
+    errors: settings.getErrors('rateLimit'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Log requests"|t('headdy'),
+    instructions: "Pro only."|t('headdy'),
+    id: 'logRequests',
+    name: 'logRequests',
+    on: settings.logRequests,
+    disabled: not plugin.isPro(),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Log request and response bodies"|t('headdy'),
+    instructions: "Off by default: bodies contain addresses and email addresses. Payment fields, passwords and tokens are always stripped, even when this is on."|t('headdy'),
+    id: 'logBodies',
+    name: 'logBodies',
+    on: settings.logBodies,
+    disabled: not plugin.isPro(),
+}) }}
+
+{{ forms.textField({
+    label: "Log retention"|t('headdy'),
+    instructions: "Days. 0 keeps everything."|t('headdy'),
+    id: 'logRetentionDays',
+    name: 'logRetentionDays',
+    value: settings.logRetentionDays,
+    type: 'number',
+    size: 6,
+    errors: settings.getErrors('logRetentionDays'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Verbose errors"|t('headdy'),
+    instructions: "Names the offending field in validation errors. With this off the API still returns a stable error code — it just stops describing the shape of your data to anyone who asks."|t('headdy'),
+    id: 'verboseErrors',
+    name: 'verboseErrors',
+    on: settings.verboseErrors,
+}) }}

@@ -1,0 +1,100 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+
+{% set title = isNew ? "New webhook"|t('headdy') : webhook.name %}
+{% set selectedSubnavItem = 'webhooks' %}
+{% set crumbs = [{ label: "Webhooks"|t('headdy'), url: url('headdy/webhooks') }] %}
+{% set fullPageForm = true %}
+
+{% block content %}
+    <input type="hidden" name="action" value="headdy/webhooks/save">
+    {{ redirectInput('headdy/webhooks') }}
+    {% if not isNew %}<input type="hidden" name="webhookId" value="{{ webhook.id }}">{% endif %}
+
+    {{ forms.textField({
+        label: "Name"|t('headdy'),
+        id: 'name',
+        name: 'name',
+        value: webhook.name,
+        required: true,
+        autofocus: true,
+        errors: webhook.getErrors('name'),
+    }) }}
+
+    {{ forms.textField({
+        label: "URL"|t('headdy'),
+        instructions: "Where the payload is POSTed. Deliveries are queued, so a slow endpoint never holds up a checkout."|t('headdy'),
+        id: 'url',
+        name: 'url',
+        value: webhook.url,
+        required: true,
+        errors: webhook.getErrors('url'),
+    }) }}
+
+    {{ forms.checkboxGroupField({
+        label: "Topics"|t('headdy'),
+        id: 'topics',
+        name: 'topics',
+        values: webhook.topics,
+        options: [
+            { label: "Cart created"|t('headdy') ~ ' — cart.created', value: 'cart.created' },
+            { label: "Cart updated"|t('headdy') ~ ' — cart.updated', value: 'cart.updated' },
+            { label: "Cart completed"|t('headdy') ~ ' — cart.completed', value: 'cart.completed' },
+            { label: "Order paid"|t('headdy') ~ ' — order.paid', value: 'order.paid' },
+            { label: "Order status changed"|t('headdy') ~ ' — order.statusChanged', value: 'order.statusChanged' },
+            { label: "Payment failed"|t('headdy') ~ ' — payment.failed', value: 'payment.failed' },
+        ],
+        errors: webhook.getErrors('topics'),
+    }) }}
+
+    {% if not isNew and webhook.secret %}
+        {{ forms.field({
+            label: "Signing secret"|t('headdy'),
+            instructions: "Every delivery carries `X-Headdy-Signature: t=<unix>,v1=<hmac>`, an HMAC-SHA256 of `<unix>.<body>`. Verify it, and reject anything more than a few minutes old."|t('headdy')|md,
+        }, '<code style="user-select:all; word-break:break-all;">' ~ webhook.secret ~ '</code>') }}
+
+        {{ forms.lightswitchField({
+            label: "Rotate the signing secret"|t('headdy'),
+            instructions: "Deliveries signed with the old secret stop verifying immediately."|t('headdy'),
+            id: 'rotateSecret',
+            name: 'rotateSecret',
+            on: false,
+        }) }}
+    {% endif %}
+
+    {{ forms.lightswitchField({
+        label: "Enabled"|t('headdy'),
+        id: 'enabled',
+        name: 'enabled',
+        on: webhook.enabled,
+    }) }}
+
+    {% if deliveries %}
+        <hr>
+        <h2>{{ "Recent deliveries"|t('headdy') }}</h2>
+        <table class="data fullwidth">
+            <thead>
+            <tr>
+                <th>{{ "When"|t('headdy') }}</th>
+                <th>{{ "Topic"|t('headdy') }}</th>
+                <th>{{ "Result"|t('headdy') }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for delivery in deliveries %}
+                <tr>
+                    <td class="light">{{ delivery.dateCreated|datetime('short') }}</td>
+                    <td><code>{{ delivery.topic }}</code></td>
+                    <td>
+                        {% if delivery.success %}
+                            <span class="status live"></span> {{ delivery.statusCode }}
+                        {% else %}
+                            <span class="status off"></span> {{ delivery.error ?: delivery.statusCode ?: "Failed"|t('headdy') }}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

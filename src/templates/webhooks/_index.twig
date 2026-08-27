@@ -1,0 +1,74 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Webhooks"|t('headdy') %}
+{% set selectedSubnavItem = 'webhooks' %}
+
+{% block actionButton %}
+    <a href="{{ url('headdy/webhooks/new') }}" class="btn submit add icon">{{ "New webhook"|t('headdy') }}</a>
+{% endblock %}
+
+{% block content %}
+    {% if webhooks is empty %}
+        <div class="zilch">
+            <p>{{ "No webhooks yet."|t('headdy') }}</p>
+            <p class="light">{{ "Point one at your front end's revalidation endpoint, or at a fulfilment app, to hear about orders without polling."|t('headdy') }}</p>
+        </div>
+    {% else %}
+        <table class="data fullwidth">
+            <thead>
+            <tr>
+                <th>{{ "Name"|t('headdy') }}</th>
+                <th>{{ "URL"|t('headdy') }}</th>
+                <th>{{ "Topics"|t('headdy') }}</th>
+                <th>{{ "Status"|t('headdy') }}</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for webhook in webhooks %}
+                <tr data-id="{{ webhook.id }}">
+                    <td><a href="{{ url('headdy/webhooks/' ~ webhook.id) }}">{{ webhook.name }}</a></td>
+                    <td class="light"><code>{{ webhook.url }}</code></td>
+                    <td class="light">{{ webhook.topics|join(', ') ?: '—' }}</td>
+                    <td>
+                        <span class="status {{ webhook.enabled ? 'live' : 'off' }}"></span>
+                        {{ webhook.enabled ? "Enabled"|t('headdy') : "Disabled"|t('headdy') }}
+                    </td>
+                    <td class="thin">
+                        <button type="button" class="btn small headdy-test">{{ "Test"|t('headdy') }}</button>
+                        <button type="button" class="delete icon headdy-delete" title="{{ 'Delete'|t('headdy') }}"></button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    {% js %}
+        document.querySelectorAll('.headdy-delete').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var row = button.closest('tr');
+
+                if (!confirm({{ "Delete this webhook?"|t('headdy')|json_encode|raw }})) {
+                    return;
+                }
+
+                Craft.sendActionRequest('POST', 'headdy/webhooks/delete', { data: { id: row.dataset.id } })
+                    .then(function() { row.remove(); })
+                    .catch(function() { Craft.cp.displayError(); });
+            });
+        });
+
+        document.querySelectorAll('.headdy-test').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var row = button.closest('tr');
+                button.classList.add('loading');
+
+                Craft.sendActionRequest('POST', 'headdy/webhooks/test', { data: { id: row.dataset.id } })
+                    .then(function(response) { Craft.cp.displayNotice(response.data.message); })
+                    .catch(function(error) { Craft.cp.displayError(error.response?.data?.message); })
+                    .finally(function() { button.classList.remove('loading'); });
+            });
+        });
+    {% endjs %}
+{% endblock %}

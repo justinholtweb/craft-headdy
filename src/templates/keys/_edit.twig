@@ -1,0 +1,109 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms" as forms %}
+
+{% set title = isNew ? "New API key"|t('headdy') : key.name %}
+{% set selectedSubnavItem = 'keys' %}
+{% set crumbs = [{ label: "API keys"|t('headdy'), url: url('headdy/keys') }] %}
+{% set fullPageForm = true %}
+
+{% block content %}
+    <input type="hidden" name="action" value="headdy/keys/save">
+    {{ redirectInput('headdy/keys') }}
+    {% if not isNew %}<input type="hidden" name="keyId" value="{{ key.id }}">{% endif %}
+
+    {% if newSecret %}
+        <blockquote class="note warning">
+            <p><strong>{{ "This is the only time this secret is shown."|t('headdy') }}</strong></p>
+            <p>{{ "Only its hash is stored, so it cannot be recovered — rotate the key if you lose it."|t('headdy') }}</p>
+            <p><code style="user-select:all; word-break:break-all;">{{ newSecret }}</code></p>
+        </blockquote>
+    {% endif %}
+
+    {{ forms.textField({
+        label: "Name"|t('headdy'),
+        instructions: "What this key is for — “Next.js storefront”, “Astro preview”."|t('headdy'),
+        id: 'name',
+        name: 'name',
+        value: key.name,
+        required: true,
+        autofocus: true,
+        errors: key.getErrors('name'),
+    }) }}
+
+    {% if not isNew %}
+        {{ forms.field({
+            label: "Public key"|t('headdy'),
+            instructions: "Sent in the `X-Headdy-Key` header. Safe to compile into browser JavaScript."|t('headdy')|md,
+        }, '<code style="user-select:all;">' ~ key.publicKey ~ '</code>') }}
+    {% endif %}
+
+    {{ forms.checkboxGroupField({
+        label: "Scopes"|t('headdy'),
+        instructions: "What this key may do. A request outside its scopes is refused with 403 before it reaches any Commerce code."|t('headdy'),
+        id: 'scopes',
+        name: 'scopes',
+        values: key.scopes,
+        options: [
+            { label: "Read the catalog"|t('headdy') ~ ' — catalog:read', value: 'catalog:read' },
+            { label: "Read carts"|t('headdy') ~ ' — cart:read', value: 'cart:read' },
+            { label: "Create and change carts"|t('headdy') ~ ' — cart:write', value: 'cart:write' },
+            { label: "Read checkout state"|t('headdy') ~ ' — checkout', value: 'checkout' },
+            { label: "Take payments"|t('headdy') ~ ' — payment', value: 'payment' },
+            { label: "Read customer accounts"|t('headdy') ~ ' — customer:read', value: 'customer:read' },
+            { label: "Change customer accounts"|t('headdy') ~ ' — customer:write', value: 'customer:write' },
+        ],
+        errors: key.getErrors('scopes'),
+    }) }}
+
+    {{ forms.editableTableField({
+        label: "Origins"|t('headdy'),
+        instructions: "Restrict this key to particular browser origins, over and above the plugin-wide list. Leave empty for no extra restriction — a key can narrow the global list, never widen it."|t('headdy'),
+        id: 'origins',
+        name: 'origins',
+        cols: {
+            value: { type: 'singleline', heading: "Origin"|t('headdy'), placeholder: 'https://shop.example.com' },
+        },
+        rows: key.origins|map(o => { value: o }),
+        allowAdd: true,
+        allowDelete: true,
+        allowReorder: false,
+    }) }}
+
+    {{ forms.textField({
+        label: "Rate limit"|t('headdy'),
+        instructions: "Requests per minute for this key. Leave at 0 to use the plugin-wide setting."|t('headdy'),
+        id: 'rateLimit',
+        name: 'rateLimit',
+        value: key.rateLimit ?? 0,
+        type: 'number',
+        size: 8,
+        errors: key.getErrors('rateLimit'),
+    }) }}
+
+    {{ forms.dateTimeField({
+        label: "Expires"|t('headdy'),
+        instructions: "Optional. Useful for a key handed to an agency for the length of a build."|t('headdy'),
+        id: 'expiryDate',
+        name: 'expiryDate',
+        value: key.expiryDate,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: "Enabled"|t('headdy'),
+        id: 'enabled',
+        name: 'enabled',
+        on: key.enabled,
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: isNew ? "Generate a secret"|t('headdy') : "Rotate the secret"|t('headdy'),
+        instructions: isNew
+            ? "A secret is always generated for a new key. It is shown once, after saving."|t('headdy')
+            : "Generates a new secret and invalidates the old one immediately. Anything using the old secret stops working."|t('headdy'),
+        id: 'rotateSecret',
+        name: 'rotateSecret',
+        on: isNew,
+        disabled: isNew,
+    }) }}
+    {% if isNew %}<input type="hidden" name="rotateSecret" value="1">{% endif %}
+{% endblock %}

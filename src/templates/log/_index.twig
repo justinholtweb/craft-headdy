@@ -1,0 +1,87 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Request log"|t('headdy') %}
+{% set selectedSubnavItem = 'log' %}
+
+{% block actionButton %}
+    <button type="button" class="btn" id="headdy-clear-log">{{ "Clear the log"|t('headdy') }}</button>
+{% endblock %}
+
+{% block content %}
+    <table class="data fullwidth" style="margin-bottom: 24px;">
+        <tbody>
+        <tr>
+            <th>{{ "Last 24 hours"|t('headdy') }}</th>
+            <td>
+                {{ summary.total }} {{ "requests"|t('headdy') }} ·
+                {{ summary.clientErrors }} 4xx ·
+                {{ summary.serverErrors }} 5xx ·
+                {{ summary.avgDurationMs }} ms {{ "average"|t('headdy') }}
+            </td>
+        </tr>
+        </tbody>
+    </table>
+
+    <p>
+        <a href="{{ url('headdy/log', failuresOnly ? {} : { failuresOnly: 1 }) }}" class="btn{{ failuresOnly ? ' active' : '' }}">
+            {{ failuresOnly ? "Showing failures only"|t('headdy') : "Show failures only"|t('headdy') }}
+        </a>
+    </p>
+
+    {% if entries is empty %}
+        <div class="zilch"><p>{{ "Nothing logged yet."|t('headdy') }}</p></div>
+    {% else %}
+        <table class="data fullwidth">
+            <thead>
+            <tr>
+                <th>{{ "When"|t('headdy') }}</th>
+                <th>{{ "Method"|t('headdy') }}</th>
+                <th>{{ "Path"|t('headdy') }}</th>
+                <th>{{ "Status"|t('headdy') }}</th>
+                <th>{{ "Key"|t('headdy') }}</th>
+                <th>{{ "Time"|t('headdy') }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for entry in entries %}
+                <tr>
+                    <td class="light">{{ entry.dateCreated|datetime('short') }}</td>
+                    <td><code>{{ entry.method }}</code></td>
+                    <td><a href="{{ url('headdy/log/' ~ entry.id) }}"><code>{{ entry.path }}</code></a></td>
+                    <td>
+                        <span class="status {{ entry.isFailure() ? 'off' : 'live' }}"></span>
+                        {{ entry.statusCode }}{% if entry.errorCode %} <span class="light">{{ entry.errorCode }}</span>{% endif %}
+                    </td>
+                    <td class="light">{{ entry.keyName ?: '—' }}</td>
+                    <td class="light">{{ entry.durationMs ? entry.durationMs ~ ' ms' : '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {% set totalPages = (total / pageSize)|round(0, 'ceil') %}
+        {% if totalPages > 1 %}
+            <div class="pagination" style="margin-top: 16px;">
+                {% if page > 1 %}
+                    <a class="btn" href="{{ url('headdy/log', { page: page - 1, failuresOnly: failuresOnly ? 1 : null }) }}">{{ "Previous"|t('headdy') }}</a>
+                {% endif %}
+                <span class="light">{{ "Page {page} of {total}"|t('headdy', { page: page, total: totalPages }) }}</span>
+                {% if page < totalPages %}
+                    <a class="btn" href="{{ url('headdy/log', { page: page + 1, failuresOnly: failuresOnly ? 1 : null }) }}">{{ "Next"|t('headdy') }}</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+
+    {% js %}
+        document.getElementById('headdy-clear-log')?.addEventListener('click', function() {
+            if (!confirm({{ "Delete every log row?"|t('headdy')|json_encode|raw }})) {
+                return;
+            }
+
+            Craft.sendActionRequest('POST', 'headdy/log/clear')
+                .then(function() { location.reload(); })
+                .catch(function() { Craft.cp.displayError(); });
+        });
+    {% endjs %}
+{% endblock %}

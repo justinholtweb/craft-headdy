@@ -1,0 +1,33 @@
+{% extends "_layouts/cp" %}
+
+{% set title = entry.method ~ ' ' ~ entry.path %}
+{% set selectedSubnavItem = 'log' %}
+{% set crumbs = [{ label: "Request log"|t('headdy'), url: url('headdy/log') }] %}
+
+{% block content %}
+    <table class="data fullwidth">
+        <tbody>
+        <tr><th style="width: 12em;">{{ "When"|t('headdy') }}</th><td>{{ entry.dateCreated|datetime('long') }}</td></tr>
+        <tr><th>{{ "Status"|t('headdy') }}</th><td>{{ entry.statusCode }}{% if entry.errorCode %} <code>{{ entry.errorCode }}</code>{% endif %}</td></tr>
+        <tr><th>{{ "Duration"|t('headdy') }}</th><td>{{ entry.durationMs ? entry.durationMs ~ ' ms' : '—' }}</td></tr>
+        <tr><th>{{ "API key"|t('headdy') }}</th><td>{{ entry.keyName ?: '—' }}</td></tr>
+        <tr><th>{{ "Origin"|t('headdy') }}</th><td><code>{{ entry.origin ?: '—' }}</code></td></tr>
+        <tr><th>{{ "IP"|t('headdy') }}</th><td><code>{{ entry.ip ?: '—' }}</code></td></tr>
+        <tr><th>{{ "Order"|t('headdy') }}</th><td>{{ entry.orderId ?: '—' }}</td></tr>
+        </tbody>
+    </table>
+
+    {% if entry.getPrettyRequest() %}
+        <h2>{{ "Request"|t('headdy') }}</h2>
+        <pre style="white-space: pre-wrap; word-break: break-word;"><code>{{ entry.getPrettyRequest() }}</code></pre>
+    {% endif %}
+
+    {% if entry.getPrettyResponse() %}
+        <h2>{{ "Response"|t('headdy') }}</h2>
+        <pre style="white-space: pre-wrap; word-break: break-word;"><code>{{ entry.getPrettyResponse() }}</code></pre>
+    {% endif %}
+
+    {% if not entry.getPrettyRequest() and not entry.getPrettyResponse() %}
+        <p class="light">{{ "Bodies are not being logged. Turn on “Log request and response bodies” in Headdy's settings to capture them."|t('headdy') }}</p>
+    {% endif %}
+{% endblock %}
