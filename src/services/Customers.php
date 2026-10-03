@@ -7,7 +7,7 @@ use craft\commerce\elements\Order;
 use craft\commerce\Plugin as Commerce;
 use craft\elements\Address;
 use craft\elements\User;
-use craft\helpers\StringHelper;
+use craft\enums\CmsEdition;
 use justinholtweb\headdy\errors\ApiException;
 use justinholtweb\headdy\models\ApiKey;
 use justinholtweb\headdy\Plugin;
@@ -56,7 +56,29 @@ class Customers extends Component
             throw $failure();
         }
 
-        if (!Craft::$app->getSecurity()->validatePassword($password, $user->password)) {
+        // A control-panel account is not a storefront account. Handing out an API token for one
+        // means a leaked storefront token is a leaked admin identity somewhere down the line.
+        //
+        // Refused *before* Craft's authentication, which counts failures towards a lockout:
+        // otherwise anyone could lock the site's admins out by sending wrong passwords here. The
+        // explanation is only for someone who has the password; everyone else gets the same
+        // failure as any wrong guess, so this can't be used to find out which addresses are admins.
+        if ($user->admin || $user->can('accessCp')) {
+            if (Craft::$app->getSecurity()->validatePassword($password, $user->password)) {
+                throw ApiException::forbidden(
+                    Craft::t('headdy', 'Control panel accounts cannot sign in through the storefront API.'),
+                    ApiException::CUSTOMER_LOGIN_FAILED,
+                );
+            }
+
+            throw $failure();
+        }
+
+        // Through Craft's own authentication, not a bare password check: that is what counts
+        // failed attempts and locks the account after `maxInvalidLogins`. A bare validatePassword()
+        // would let the storefront API guess passwords without ever tripping the lockout the
+        // control panel login has.
+        if (!$user->authenticate($password)) {
             throw $failure();
         }
 
@@ -64,14 +86,8 @@ class Customers extends Component
             throw $failure();
         }
 
-        // A control-panel account is not a storefront account. Handing out an API token for one
-        // means a leaked storefront token is a leaked admin identity somewhere down the line.
-        if ($user->admin || $user->can('accessCp')) {
-            throw ApiException::forbidden(
-                Craft::t('headdy', 'Control panel accounts cannot sign in through the storefront API.'),
-                ApiException::CUSTOMER_LOGIN_FAILED,
-            );
-        }
+        // Resets the failed-attempt count, as a successful control panel sign-in does.
+        Craft::$app->getUsers()->handleValidLogin($user);
 
         $tokens = Plugin::getInstance()->getTokens()->issueCustomerToken($user, $key);
         $tokens['customer'] = $this->profile($user);
@@ -80,6 +96,25 @@ class Customers extends Component
     }
 
     /**
+     * Whether a new account must prove its email address before it can sign in — Craft's own
+     * rule, the one its front-end registration follows.
+     */
+    public function requiresEmailVerification(): bool
+    {
+        return Craft::$app->edition->value >= CmsEdition::Pro->value
+            && (bool)(Craft::$app->getProjectConfig()->get('users.requireEmailVerification') ?? true);
+    }
+
+    /**
+     * Creates an account.
+     *
+     * When Craft requires email verification (its default), the account is created **pending**,
+     * Craft's activation email is sent, and no tokens are issued — the response says
+     * `verificationRequired`. Activating on the spot and handing out tokens would let anyone
+     * register someone else's address, wait for that person to check out as a guest (Commerce
+     * files the order under the existing account), and read the order back.
+     *
+     * @return array{verificationRequired: bool, token?: string, refreshToken?: string, expiresIn?: int, refreshExpiresIn?: int, customer?: array}
      * @throws ApiException
      */
     public function register(array $params, ?ApiKey $key = null): array
@@ -116,16 +151,35 @@ class Customers extends Component
             );
         }
 
+        $verify = $this->requiresEmailVerification();
+
         $user = new User();
         $user->email = $email;
         $user->username = $email;
-        $user->firstName = $params['firstName'] ?? null;
-        $user->lastName = $params['lastName'] ?? null;
-        $user->newPassword = $password !== '' ? $password : StringHelper::randomString(32);
-        $user->pending = false;
+        $user->firstName = is_scalar($params['firstName'] ?? null) ? (string)$params['firstName'] : null;
+        $user->lastName = is_scalar($params['lastName'] ?? null) ? (string)$params['lastName'] : null;
+        $user->pending = $verify;
 
-        if (!empty($params['fields']) && is_array($params['fields'])) {
-            $user->setFieldValues($params['fields']);
+        // Without a password, a verified account gets Craft's "set your password" link instead.
+        // An unverified one needs a password now, or nobody could ever sign in to it.
+        if ($password !== '') {
+            $user->newPassword = $password;
+        } elseif (!$verify) {
+            throw ApiException::invalid(
+                Craft::t('headdy', 'A password is required.'),
+                ['password' => [Craft::t('headdy', 'A password is required.')]],
+            );
+        }
+
+        // Only the custom fields the merchant has opened to registration. Anything else on the
+        // user — an approval flag, a membership tier — would otherwise be settable by whoever
+        // registers.
+        $fields = is_array($params['fields'] ?? null)
+            ? array_intersect_key($params['fields'], array_flip(Plugin::getInstance()->getSettings()->getRegistrationFields()))
+            : [];
+
+        if ($fields !== []) {
+            $user->setFieldValues($fields);
         }
 
         if (!Craft::$app->getElements()->saveElement($user)) {
@@ -135,12 +189,22 @@ class Customers extends Component
             );
         }
 
+        if ($verify) {
+            try {
+                Craft::$app->getUsers()->sendActivationEmail($user);
+            } catch (\Throwable $e) {
+                Craft::error('Headdy could not send an activation email: ' . $e->getMessage(), 'headdy');
+            }
+
+            return ['verificationRequired' => true];
+        }
+
         Craft::$app->getUsers()->activateUser($user);
 
         $tokens = Plugin::getInstance()->getTokens()->issueCustomerToken($user, $key);
         $tokens['customer'] = $this->profile($user);
 
-        return $tokens;
+        return ['verificationRequired' => false] + $tokens;
     }
 
     /**

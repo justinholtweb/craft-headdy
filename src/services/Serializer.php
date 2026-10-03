@@ -8,10 +8,9 @@ use craft\commerce\base\PurchasableInterface;
 use craft\commerce\elements\Order;
 use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
-use craft\commerce\models\Address as CommerceAddress;
+use craft\commerce\helpers\PaymentForm;
 use craft\commerce\models\LineItem;
 use craft\commerce\models\OrderAdjustment;
-use craft\commerce\helpers\PaymentForm;
 use craft\commerce\models\ShippingMethodOption;
 use craft\commerce\Plugin as Commerce;
 use craft\elements\Address;
@@ -197,7 +196,7 @@ class Serializer extends Component
      * a caller must POST back. Renaming them to something friendlier would mean a client that reads
      * an address cannot write it back unchanged.
      */
-    public function address(Address|CommerceAddress|null $address): ?array
+    public function address(?Address $address): ?array
     {
         if ($address === null) {
             return null;

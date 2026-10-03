@@ -3,8 +3,8 @@
 namespace justinholtweb\headdy\services;
 
 use Craft;
-use craft\helpers\Db;
 use craft\helpers\DateTimeHelper;
+use craft\helpers\Db;
 use craft\helpers\Json;
 use DateTime;
 use justinholtweb\headdy\models\ApiKey;

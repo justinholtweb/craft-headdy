@@ -188,8 +188,11 @@ Tested against Craft 5.10 and Commerce 5.7.
 
 ```sh
 cd ~/Sites/plugin-testing
-ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 123 checks
+ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 133 checks
 ```
+
+Static analysis runs in the shared phpstan runner:
+`vendor/bin/phpstan analyse --memory-limit=1G && vendor/bin/ecs check` (level 4, clean).
 
 The suite includes live HTTP round-trips against the real endpoint — key rejection, CORS preflight,
 the whole cart lifecycle and a real gateway payment — so a green run means the wire protocol works,

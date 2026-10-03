@@ -79,6 +79,15 @@ JSON-ish columns are plain `text` and encoded by hand — Craft's query builder 
   a cart token could charge someone else's card.
 - **Login failures are indistinguishable** — same code, same message, whether the account is
   missing, suspended, or the password is wrong. Otherwise the endpoint enumerates customers.
+- **Sign-in goes through `User::authenticate()`** so Craft's lockout counts it — but a control panel
+  account is refused *before* that, or the API becomes a way to lock admins out. (The test suite did
+  exactly that to the harness admin before the order was fixed.) A CP account only gets the
+  explanatory 403 when its password is right.
+- **Registration honours Craft's `users.requireEmailVerification`**: pending account, activation
+  email, `202 {verificationRequired: true}`, no tokens. `fields` is filtered by the
+  `registrationFields` setting.
+- **GraphQL is a schema component** (`headdyCarts:read` / `:edit`), checked when the schema is built
+  *and* in every resolver (`CartMutations::guard()`).
 
 ## Traps found while building this
 
@@ -108,6 +117,12 @@ JSON-ish columns are plain `text` and encoded by hand — Craft's query builder 
 - **Primary billing/shipping address IDs live in a Commerce table**, not on the user element —
   assigning the behavior property and saving the user writes nothing. Use
   `Commerce::getCustomers()->savePrimary*AddressId()`.
+- **Commerce 5 stores a variant's price as `basePrice`**; `price` is computed from it and the
+  catalog-pricing table. A fixture that sets `price` saves at 0, and every test cart was free until
+  `makeProduct()` was fixed — so no test had ever proved a balance was charged.
+- **Craft keeps built GraphQL types in static registries** (`TypeLoader`, `GqlEntityRegistry`) for
+  the life of the process. Building a second schema in the same script reuses the first one's
+  `Mutation` type unless you call `Gql::flushCaches()` between them.
 - **An install that half-fails leaves its tables behind**, and the retry then dies on "table already
   exists". `Install::safeUp()` returns early when the whole schema is already present.
 - **Craft's URL rules support `'POST pattern' => 'route'`**, and `array_filter()` runs over the
@@ -123,7 +138,7 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 
 ```sh
 cd ~/Sites/plugin-testing
-ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 123 checks
+ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 133 checks
 ddev exec bash -c 'find /var/www/craft-headdy/src -name "*.php" -print0 | xargs -0 -n1 php -l'
 ```
 

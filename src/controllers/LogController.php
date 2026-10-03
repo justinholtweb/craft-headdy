@@ -4,10 +4,10 @@ namespace justinholtweb\headdy\controllers;
 
 use Craft;
 use craft\web\Controller;
-use craft\web\Response;
 use justinholtweb\headdy\Plugin;
 use yii\web\ForbiddenHttpException;
 use yii\web\NotFoundHttpException;
+use yii\web\Response;
 
 /**
  * The request log.

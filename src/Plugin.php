@@ -9,6 +9,7 @@ use craft\commerce\elements\Order;
 use craft\events\ModelEvent;
 use craft\events\RegisterGqlMutationsEvent;
 use craft\events\RegisterGqlQueriesEvent;
+use craft\events\RegisterGqlSchemaComponentsEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\services\Gql;
@@ -475,11 +476,31 @@ class Plugin extends BasePlugin
 
         $this->_graphqlRegistered = true;
 
+        // A schema component, so the cart fields only exist on schemas a merchant has granted them
+        // to. Merged into every schema — the public one included — they would let anyone create
+        // and complete carts through `/api` with no key and no rate limit, however tightly the
+        // REST API's keys and scopes were set.
+        Event::on(
+            Gql::class,
+            Gql::EVENT_REGISTER_GQL_SCHEMA_COMPONENTS,
+            static function(RegisterGqlSchemaComponentsEvent $event) {
+                $label = Craft::t('headdy', 'Headdy storefront');
+                $event->queries[$label] = [
+                    CartMutations::COMPONENT . ':read' => ['label' => Craft::t('headdy', 'Read carts and checkout state by cart token')],
+                ];
+                $event->mutations[$label] = [
+                    CartMutations::COMPONENT . ':edit' => ['label' => Craft::t('headdy', 'Create, change and complete carts by cart token')],
+                ];
+            }
+        );
+
         Event::on(
             Gql::class,
             Gql::EVENT_REGISTER_GQL_MUTATIONS,
             static function(RegisterGqlMutationsEvent $event) {
-                $event->mutations = array_merge($event->mutations, CartMutations::getMutations());
+                if (CartMutations::schemaAllows('edit')) {
+                    $event->mutations = array_merge($event->mutations, CartMutations::getMutations());
+                }
             }
         );
 
@@ -487,7 +508,9 @@ class Plugin extends BasePlugin
             Gql::class,
             Gql::EVENT_REGISTER_GQL_QUERIES,
             static function(RegisterGqlQueriesEvent $event) {
-                $event->queries = array_merge($event->queries, CartQueries::getQueries());
+                if (CartMutations::schemaAllows('read')) {
+                    $event->queries = array_merge($event->queries, CartQueries::getQueries());
+                }
             }
         );
     }

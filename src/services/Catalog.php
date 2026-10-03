@@ -161,7 +161,8 @@ class Catalog extends Component
                 'id' => $type->id,
                 'handle' => $type->handle,
                 'name' => $type->name,
-                'hasVariants' => (bool)$type->maxVariants !== 1,
+                // `maxVariants` is null for unlimited; only a cap of exactly one means a single variant.
+                'hasVariants' => $type->maxVariants !== 1,
             ];
         }
 

@@ -5,10 +5,10 @@ namespace justinholtweb\headdy\controllers;
 use Craft;
 use craft\helpers\DateTimeHelper;
 use craft\web\Controller;
-use craft\web\Response;
 use justinholtweb\headdy\models\ApiKey;
 use justinholtweb\headdy\Plugin;
 use yii\web\NotFoundHttpException;
+use yii\web\Response;
 
 /**
  * API key management.

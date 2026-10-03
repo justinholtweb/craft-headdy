@@ -157,6 +157,21 @@
     disabled: not plugin.isPro(),
 }) }}
 
+{{ forms.editableTableField({
+    label: "Fields registration may set"|t('headdy'),
+    instructions: "Custom field handles a new customer may fill in through `fields`. Anything not listed is ignored. New accounts follow Craft's **Verify email addresses** user setting: when it's on, they're created pending and get no tokens until the address is confirmed."|t('headdy')|md,
+    id: 'registrationFields',
+    name: 'registrationFields',
+    cols: {
+        value: { type: 'singleline', heading: "Field handle"|t('headdy'), class: 'code' },
+    },
+    rows: settings.getRegistrationFields()|map(h => { value: h }),
+    allowAdd: true,
+    allowDelete: true,
+    allowReorder: false,
+    disabled: not plugin.isPro(),
+}) }}
+
 <h2>{{ "Catalog and GraphQL"|t('headdy') }}</h2>
 
 {{ forms.lightswitchField({

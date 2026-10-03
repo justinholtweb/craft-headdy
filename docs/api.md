@@ -244,6 +244,23 @@ are refused outright.
 If you send a cart token alongside a sign-in, the cart is attached to the customer and returned in
 the response — so a shopper who logs in mid-checkout keeps their basket.
 
+**Sign-in uses Craft's lockout.** Wrong passwords count towards `maxInvalidLogins`, exactly as a
+control panel sign-in does, so a locked account stays locked until Craft's cooldown passes. A
+control panel account is refused before anything is counted, so the storefront API can't be used to
+lock an admin out.
+
+**Credential endpoints are rate limited per address**, whatever the API key's own limit: sign-in 10
+a minute (and 5 per account name), registration 5, refresh 30, order lookup 20. Over the limit is a
+`429 rate_limited` with `Retry-After`.
+
+**Registration follows Craft's "Verify email addresses" user setting.** With it on (Craft's
+default), `POST /customers` creates a pending account, sends Craft's activation email, and answers
+`202` with `{"verificationRequired": true}` and **no tokens** — sign in once the address is
+confirmed. With it off, the account is active at once and the response is `201` with
+`verificationRequired: false` plus the token pair. `password` is optional only when verification is
+on (the activation email then lets the customer set one). `fields` may only set the custom fields
+listed in the **Fields registration may set** setting; anything else is ignored.
+
 ## Store
 
 | Method | Path |
@@ -286,8 +303,13 @@ the response — so a shopper who logs in mid-checkout keeps their basket.
 
 ## GraphQL — Pro
 
-Registered on Craft's own GraphQL endpoint. Authentication is a `cartToken` argument, not a cookie;
-the Craft schema still governs access to the endpoint itself.
+Registered on Craft's own GraphQL endpoint. Authentication is a `cartToken` argument, not a cookie.
+
+**A schema has to be granted Headdy's carts.** Under *Settings → GraphQL → Schemas*, tick
+**Headdy storefront → Read carts and checkout state** (`headdyCarts:read`) for the queries and
+**Create, change and complete carts** (`headdyCarts:edit`) for the mutations. A schema without them
+— the public schema included — has no `headdyCart*` fields at all, and a resolver reached anyway
+refuses. The plugin's per-minute rate limit applies per address.
 
 ```graphql
 mutation {

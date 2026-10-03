@@ -8,10 +8,8 @@ use craft\helpers\Json;
 use craft\web\Controller;
 use craft\web\Response;
 use justinholtweb\headdy\errors\ApiException;
-use justinholtweb\headdy\models\ApiKey;
 use justinholtweb\headdy\models\Settings;
 use justinholtweb\headdy\Plugin;
-use justinholtweb\headdy\records\CartTokenRecord;
 use Throwable;
 use yii\base\Action;
 use yii\base\InvalidRouteException;
@@ -439,7 +437,7 @@ abstract class ApiController extends Controller
     {
         $context = Plugin::getInstance()->getRequestContext();
         $key = $context->getKey();
-        $limit = $key?->rateLimit ?? Plugin::getInstance()->getSettings()->rateLimit;
+        $limit = $key->rateLimit ?? Plugin::getInstance()->getSettings()->rateLimit;
 
         if (!$limit) {
             return;

@@ -2,11 +2,13 @@
 
 namespace justinholtweb\headdy\controllers\api;
 
+use Craft;
 use craft\web\Response;
 use justinholtweb\headdy\errors\ApiException;
 use justinholtweb\headdy\models\ApiKey;
 use justinholtweb\headdy\Plugin;
 use justinholtweb\headdy\web\ApiController;
+use justinholtweb\headdy\web\RateLimiter;
 
 /**
  * Customer accounts, order history and the address book.
@@ -36,7 +38,42 @@ class CustomersController extends ApiController
         // and its CORS headers, rather than a bare 403 the browser turns into a network failure.
         $this->requirePro();
 
+        // The endpoints that take a secret get their own per-address budget, always — the key's
+        // rate limit is off by default, and when it is on it is shared by every shopper behind a
+        // public key, so one attacker could both guess passwords at full speed and use the budget
+        // up for everyone else. Sign-in is also limited per account name.
+        if (isset(self::THROTTLES[$action->id])) {
+            $this->_throttle('ip:' . $this->request->getUserIP(), $action->id, self::THROTTLES[$action->id]);
+
+            if ($action->id === 'login') {
+                $loginName = strtolower(trim((string)($this->param('loginName') ?? $this->param('email') ?? '')));
+                $this->_throttle('login:' . sha1($loginName), $action->id, self::LOGIN_ATTEMPTS_PER_ACCOUNT);
+            }
+        }
+
         return true;
+    }
+
+    /** Requests per address per minute for the endpoints that take a credential. */
+    private const THROTTLES = ['login' => 10, 'register' => 5, 'refresh' => 30, 'lookup' => 20];
+
+    /** Sign-in attempts per account name per minute, whoever is making them. */
+    private const LOGIN_ATTEMPTS_PER_ACCOUNT = 5;
+
+    /**
+     * @throws ApiException
+     */
+    private function _throttle(string $subject, string $bucket, int $perMinute): void
+    {
+        if (RateLimiter::hit("auth.$bucket.$subject", $perMinute) < 0) {
+            Craft::$app->getResponse()->getHeaders()->set('Retry-After', '60');
+
+            throw new ApiException(
+                ApiException::RATE_LIMITED,
+                Craft::t('headdy', 'Too many requests. Try again shortly.'),
+                429,
+            );
+        }
     }
 
     /**
@@ -117,7 +154,8 @@ class CustomersController extends ApiController
             Plugin::getInstance()->getRequestContext()->getKey(),
         );
 
-        return $this->success($result, 201);
+        // 202 when the account exists but can't be used until its address is confirmed.
+        return $this->success($result, $result['verificationRequired'] ? 202 : 201);
     }
 
     /**

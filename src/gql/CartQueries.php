@@ -24,6 +24,7 @@ class CartQueries extends Query
                 'description' => 'The cart behind a cart token. Returns null if the token is unknown, expired, or its cart has been completed.',
                 'args' => ['cartToken' => Type::nonNull(Type::string())],
                 'resolve' => static function($root, array $args) {
+                    CartMutations::guard('read');
                     $plugin = Plugin::getInstance();
                     $cart = $plugin->getTokens()->getCartByToken((string)$args['cartToken']);
 
@@ -36,6 +37,7 @@ class CartQueries extends Query
                 'description' => 'What is still missing before this cart can be paid for.',
                 'args' => ['cartToken' => Type::nonNull(Type::string())],
                 'resolve' => static function($root, array $args) {
+                    CartMutations::guard('read');
                     $plugin = Plugin::getInstance();
                     $cart = $plugin->getTokens()->getCartByToken((string)$args['cartToken']);
 

@@ -2,9 +2,9 @@
 
 namespace justinholtweb\headdy\migrations;
 
+use craft\commerce\db\Table as CommerceTable;
 use craft\db\Migration;
 use craft\db\Table as CraftTable;
-use craft\commerce\db\Table as CommerceTable;
 use justinholtweb\headdy\db\Table;
 
 /**

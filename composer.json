@@ -23,6 +23,9 @@
         }
     ],
     "support": {
+        "docs": "https://justinholt.com/plugins/craft-headdy/docs",
+        "source": "https://github.com/justinholtweb/craft-headdy",
+        "issues": "https://github.com/justinholtweb/craft-headdy/issues",
         "email": "justin@justinholt.com"
     },
     "minimum-stability": "stable",
@@ -33,6 +36,11 @@
         "craftcms/cms": "^5.3.0",
         "craftcms/commerce": "^5.0.0"
     },
+    "require-dev": {
+        "craftcms/ecs": "dev-main",
+        "craftcms/phpstan": "dev-main",
+        "phpstan/phpstan": "^1.12 || ^2.2"
+    },
     "autoload": {
         "psr-4": {
             "justinholtweb\\headdy\\": "src/"
@@ -42,6 +50,9 @@
         "allow-plugins": {
             "craftcms/plugin-installer": true,
             "yiisoft/yii2-composer": true
+        },
+        "platform": {
+            "php": "8.2.0"
         }
     },
     "extra": {
@@ -49,8 +60,13 @@
         "handle": "headdy",
         "developer": "Justin Holt",
         "developerUrl": "https://justinholt.com",
-        "documentationUrl": "https://github.com/justinholtweb/craft-headdy/blob/main/README.md",
+        "documentationUrl": "https://justinholt.com/plugins/craft-headdy/docs",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-headdy/main/CHANGELOG.md",
         "class": "justinholtweb\\headdy\\Plugin"
+    },
+    "scripts": {
+        "check-cs": "ecs check --ansi",
+        "fix-cs": "ecs check --fix --ansi",
+        "phpstan": "phpstan --memory-limit=1G"
     }
 }

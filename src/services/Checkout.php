@@ -187,6 +187,19 @@ class Checkout extends Component
             // hour ago gets completed at yesterday's price.
             $cart->recalculate();
 
+            // …and ask again afterwards. The check above ran on the totals the cart had before
+            // recalculating; an expired coupon or a price change can open a balance here, and
+            // completing then would hand over an unpaid order.
+            if ($this->requiresPayment($cart)) {
+                throw new ApiException(
+                    ApiException::CHECKOUT_INCOMPLETE,
+                    Craft::t('headdy', 'This order has an outstanding balance and must be paid for.'),
+                    422,
+                    [],
+                    ['missing' => [self::REQUIRES_PAYMENT_METHOD]],
+                );
+            }
+
             if (!$cart->markAsComplete()) {
                 throw new ApiException(
                     ApiException::CART_INVALID,

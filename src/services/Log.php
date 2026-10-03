@@ -76,7 +76,7 @@ class Log extends Component
     /**
      * Replaces sensitive values with `[redacted]`, recursively.
      *
-     * @param array|string|null $payload
+     * @param mixed $payload Usually an array or a JSON string; anything else is not logged.
      */
     public function redact(mixed $payload): ?string
     {

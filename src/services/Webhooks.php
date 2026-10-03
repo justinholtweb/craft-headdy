@@ -199,7 +199,7 @@ class Webhooks extends Component
     }
 
     /**
-     * @return WebhookDeliveryRecord[]
+     * @return array<WebhookDeliveryRecord|array>
      */
     public function getDeliveries(int $webhookId, int $limit = 50): array
     {

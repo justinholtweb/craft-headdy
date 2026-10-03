@@ -84,6 +84,14 @@ class Settings extends Model
     public bool $allowCustomerRegistration = false;
 
     /**
+     * @var array<int, string|array{value?: string}> Custom field handles `POST /customers` may set
+     * on the new user (strings, or settings-screen table rows). Empty — the
+     * default — means none: every other field on the user is the merchant's to set, not the
+     * registrant's.
+     */
+    public array $registrationFields = [];
+
+    /**
      * @var string[] URL patterns a caller may hand to a gateway as a return or cancel URL.
      *
      * Craft's own checkout hashes these into the form; a JSON client cannot produce that hash, so
@@ -207,6 +215,26 @@ class Settings extends Model
     public function getAllowedOrigins(): array
     {
         return self::normalizeOrigins($this->allowedOrigins);
+    }
+
+    /**
+     * Registration field handles, from either a config-file list or the settings screen's table.
+     *
+     * @return string[]
+     */
+    public function getRegistrationFields(): array
+    {
+        $handles = [];
+
+        foreach ($this->registrationFields as $row) {
+            $handle = trim((string)(is_array($row) ? ($row['value'] ?? '') : $row));
+
+            if ($handle !== '') {
+                $handles[] = $handle;
+            }
+        }
+
+        return array_values(array_unique($handles));
     }
 
     /**

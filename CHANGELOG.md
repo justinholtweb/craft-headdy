@@ -22,6 +22,9 @@ Initial release.
 - Eleven cart mutations and two queries registered on Craft's own GraphQL endpoint, closing the gap
   left by craftcms/commerce#2350. Every one resolves through the same service method the REST
   endpoints use.
+- They exist only on schemas granted the **Headdy storefront** component (`headdyCarts:read`,
+  `headdyCarts:edit`) — never on the public schema by default — and resolvers refuse a schema
+  without it. The plugin's rate limit applies per address.
 
 ### Authentication
 
@@ -30,6 +33,16 @@ Initial release.
 - Cart tokens and customer tokens, stored only as SHA-256 hashes, with sliding expiry, refresh token
   rotation and explicit revocation.
 - No session, no cookie and no CSRF token on any API request.
+- Customer sign-in goes through Craft's own authentication, so wrong passwords count towards Craft's
+  lockout; control panel accounts are refused before anything is counted, so the API can't lock an
+  admin out.
+- Credential endpoints (sign-in, registration, refresh, order lookup) are rate limited per address,
+  and sign-in per account name, independently of the API key's limit.
+- Registration follows Craft's "Verify email addresses" setting: a new account is pending and gets
+  no tokens until its address is confirmed. Only the custom fields listed in **Fields registration
+  may set** can be filled in.
+- A zero-balance checkout is re-checked after the cart is recalculated, so a total that changed in
+  between can't be completed unpaid.
 
 ### Control panel
 

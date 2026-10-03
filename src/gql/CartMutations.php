@@ -5,10 +5,12 @@ namespace justinholtweb\headdy\gql;
 use Craft;
 use craft\commerce\elements\Order;
 use craft\gql\base\Mutation;
+use craft\helpers\Gql as GqlHelper;
 use GraphQL\Type\Definition\Type;
 use justinholtweb\headdy\errors\ApiException;
 use justinholtweb\headdy\gql\types\CartType;
 use justinholtweb\headdy\Plugin;
+use justinholtweb\headdy\web\RateLimiter;
 
 /**
  * The cart mutations Craft Commerce does not ship.
@@ -276,7 +278,7 @@ class CartMutations extends Mutation
     /**
      * @throws \GraphQL\Error\UserError
      */
-    private static function guard(): void
+    public static function guard(string $action = 'edit'): void
     {
         $plugin = Plugin::getInstance();
 
@@ -286,6 +288,37 @@ class CartMutations extends Mutation
 
         if (!Plugin::commerceIsReady()) {
             throw new \GraphQL\Error\UserError(Craft::t('headdy', 'Craft Commerce is not available.'));
+        }
+
+        // Checked again here, not only when the schema is built: Craft caches schema definitions,
+        // and a resolver is the last place that can refuse.
+        if (!self::schemaAllows($action)) {
+            throw new \GraphQL\Error\UserError(Craft::t('headdy', 'This GraphQL schema does not include Headdy carts.'));
+        }
+
+        // The REST API's rate limit applies here too, per address — GraphQL has no API key to
+        // count against.
+        $limit = $plugin->getSettings()->rateLimit;
+        $request = Craft::$app->getRequest();
+
+        if ($limit > 0 && !$request->getIsConsoleRequest() && RateLimiter::hit('gql.ip' . $request->getUserIP(), $limit) < 0) {
+            throw new \GraphQL\Error\UserError(ApiException::RATE_LIMITED . ': ' . Craft::t('headdy', 'Too many requests. Try again shortly.'));
+        }
+    }
+
+    /** The schema component this plugin registers; `headdyCarts:read` / `headdyCarts:edit`. */
+    public const COMPONENT = 'headdyCarts';
+
+    /**
+     * Whether the active GraphQL schema has been granted Headdy's carts.
+     */
+    public static function schemaAllows(string $action): bool
+    {
+        try {
+            return GqlHelper::canSchema(self::COMPONENT, $action);
+        } catch (\Throwable) {
+            // No active schema at all — nothing has granted anything.
+            return false;
         }
     }
 

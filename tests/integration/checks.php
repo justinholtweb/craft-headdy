@@ -25,7 +25,6 @@ use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\Plugin as Commerce;
 use craft\elements\User;
-use craft\helpers\StringHelper;
 use justinholtweb\headdy\db\Table;
 use justinholtweb\headdy\errors\ApiException;
 use justinholtweb\headdy\helpers\Money;
@@ -160,7 +159,9 @@ function makeProduct(string $sku, float $price): Variant
 
     $variant = new Variant();
     $variant->sku = $sku;
-    $variant->price = $price;
+    // `basePrice` is what Commerce 5 stores; `price` is computed from it and the catalog, so
+    // setting `price` saved every fixture at 0.
+    $variant->basePrice = $price;
     $variant->isDefault = true;
     $variant->inventoryTracked = false;
 
@@ -172,7 +173,14 @@ function makeProduct(string $sku, float $price): Variant
 
     $createdProducts[] = $product;
 
-    return $product->getVariants()->one();
+    $variant = $product->getVariants()->one();
+
+    // Commerce 5 prices line items from its catalog pricing table, which a queue job fills in
+    // after a save. Without generating it here every fixture costs nothing, so no test cart ever
+    // had a balance — including the ones meant to prove a balance is charged.
+    $commerce->getCatalogPricing()->generateCatalogPrices([$variant->id]);
+
+    return $variant;
 }
 
 /**
@@ -741,6 +749,66 @@ try {
             ?: 'json_encode failed: ' . json_last_error_msg();
     });
 
+    check('a cart that only looked free before recalculating is not completed unpaid', function() use ($carts, $key, $variant, $plugin, &$createdOrders) {
+        // A discount that covers the whole cart while it's priced and is gone by the time it's
+        // completed — an expiring coupon, in effect.
+        $GLOBALS['headdyTestFree'] = true;
+        $adjuster = new class() implements craft\commerce\base\AdjusterInterface {
+            public function adjust(craft\commerce\elements\Order $order): array
+            {
+                if (empty($GLOBALS['headdyTestFree']) || $order->getItemSubtotal() <= 0) {
+                    return [];
+                }
+
+                $adjustment = new craft\commerce\models\OrderAdjustment();
+                $adjustment->type = 'discount';
+                $adjustment->name = 'Expiring coupon';
+                $adjustment->amount = -$order->getItemSubtotal();
+                $adjustment->setOrder($order);
+
+                return [$adjustment];
+            }
+        };
+        $handler = function(craft\events\RegisterComponentTypesEvent $event) use ($adjuster) {
+            $event->types[] = get_class($adjuster);
+        };
+        // The service instantiates adjusters by class name, so the anonymous class has to be
+        // constructible with no arguments — it is.
+        yii\base\Event::on(craft\commerce\services\OrderAdjustments::class, craft\commerce\services\OrderAdjustments::EVENT_REGISTER_ORDER_ADJUSTERS, $handler);
+
+        try {
+            $cart = $carts->createCart($key);
+            $createdOrders[] = $cart;
+            $cart = $carts->update($cart, [
+                'addItems' => [['purchasableId' => $variant->id, 'qty' => 1]],
+                'email' => 'stale-total@example.com',
+            ]);
+
+            $checkout = $plugin->getCheckout();
+
+            if ($checkout->missingRequirements($cart) !== [] || $checkout->requiresPayment($cart)) {
+                return 'precondition not met: ' . json_encode($checkout->missingRequirements($cart)) . ', requiresPayment ' . var_export($checkout->requiresPayment($cart), true);
+            }
+
+            $GLOBALS['headdyTestFree'] = false;
+
+
+            try {
+                $checkout->complete($cart);
+
+                return 'an order with a balance was completed without payment';
+            } catch (ApiException $e) {
+                $completed = craft\commerce\elements\Order::find()->id($cart->id)->isCompleted(true)->exists();
+
+                return ($e->data['missing'] ?? null) === [Checkout::REQUIRES_PAYMENT_METHOD] && !$completed
+                    ?: 'threw ' . $e->errorCode . ' ' . json_encode($e->data) . ', completed ' . var_export($completed, true);
+            }
+        } finally {
+            yii\base\Event::off(craft\commerce\services\OrderAdjustments::class, craft\commerce\services\OrderAdjustments::EVENT_REGISTER_ORDER_ADJUSTERS, $handler);
+            unset($GLOBALS['headdyTestFree']);
+        }
+    });
+
     // =====================================================================
     section('Payment redirect validation');
 
@@ -1235,6 +1303,63 @@ try {
     // exercises the same method `init()` calls.
     $plugin->registerGraphql();
 
+    // The cart fields only exist on a schema granted Headdy's component. First, one
+    // that isn't: neither the fields nor the resolvers may be reachable.
+    $gqlService = Craft::$app->getGql();
+    // Distinct uids: Craft keys its built schema definitions by uid.
+    $ungranted = new craft\models\GqlSchema(['name' => 'No Headdy', 'uid' => craft\helpers\StringHelper::UUID(), 'scope' => []]);
+    $granted = new craft\models\GqlSchema(['name' => 'Headdy carts', 'uid' => craft\helpers\StringHelper::UUID(), 'scope' => ['headdyCarts:read', 'headdyCarts:edit']]);
+
+    check('a schema without the Headdy grant gets no cart mutations or queries', function() use ($gqlService, $ungranted) {
+        $gqlService->setActiveSchema($ungranted);
+        $mutations = new craft\events\RegisterGqlMutationsEvent(['mutations' => []]);
+        $gqlService->trigger(craft\services\Gql::EVENT_REGISTER_GQL_MUTATIONS, $mutations);
+        $queries = new craft\events\RegisterGqlQueriesEvent(['queries' => []]);
+        $gqlService->trigger(craft\services\Gql::EVENT_REGISTER_GQL_QUERIES, $queries);
+
+        return !isset($mutations->mutations['headdyCartCreate']) && !isset($queries->queries['headdyCart'])
+            ?: 'cart fields registered on an ungranted schema';
+    });
+
+    check('a resolver refuses a schema without the grant, even if the field were cached', function() use ($gqlService, $ungranted, $variant) {
+        $gqlService->setActiveSchema($ungranted);
+
+        try {
+            justinholtweb\headdy\gql\CartMutations::create(['items' => [['purchasableId' => $variant->id, 'qty' => 1]]]);
+
+            return 'a cart was created without the grant';
+        } catch (GraphQL\Error\UserError $e) {
+            return str_contains($e->getMessage(), 'does not include Headdy') ?: $e->getMessage();
+        }
+    });
+
+    check('the schema component is offered on the GraphQL schema screen', function() use ($gqlService) {
+        $components = $gqlService->getAllSchemaComponents();
+        $flat = json_encode($components);
+
+        return str_contains($flat, 'headdyCarts:read') && str_contains($flat, 'headdyCarts:edit') ?: 'component not registered';
+    });
+
+    check('Craft\'s built schema has the cart mutation only when the component is granted', function() use ($gqlService, $ungranted, $granted) {
+        $has = function(craft\models\GqlSchema $schema) use ($gqlService): bool {
+            // Craft keeps loaded types in static registries for the life of the process; a
+            // second schema built without flushing them reuses the first one's Mutation type.
+            $gqlService->flushCaches();
+            $gqlService->setActiveSchema($schema);
+            $built = $gqlService->getSchemaDef($schema, true);
+
+            return $built->getMutationType()?->hasField('headdyCartCreate') ?? false;
+        };
+
+        $without = $has($ungranted);
+        $with = $has($granted);
+
+        return !$without && $with ?: 'ungranted ' . var_export($without, true) . ', granted ' . var_export($with, true);
+    });
+
+    // Everything below runs as a schema that has been granted the component.
+    $gqlService->setActiveSchema($granted);
+
     check('the cart mutations are registered', function() {
         $event = new craft\events\RegisterGqlMutationsEvent(['mutations' => []]);
         Craft::$app->getGql()->trigger(craft\services\Gql::EVENT_REGISTER_GQL_MUTATIONS, $event);
@@ -1397,6 +1522,119 @@ try {
         } catch (ApiException $e) {
             return ($found['number'] ?? null) === $cart->number && $e->statusCode === 404
                 ?: 'the right email failed, or the wrong one gave itself away';
+        }
+    });
+
+    check('registration creates a pending account and issues no tokens while Craft verifies email', function() use ($plugin, $suffix, &$createdUsers) {
+        $settings = $plugin->getSettings();
+        $was = $settings->allowCustomerRegistration;
+        $settings->allowCustomerRegistration = true;
+
+        try {
+            if (!$plugin->getCustomers()->requiresEmailVerification()) {
+                return 'this harness does not require email verification, so the check proves nothing';
+            }
+
+            $result = $plugin->getCustomers()->register(['email' => "registrant-$suffix@example.com", 'password' => 'a perfectly long password']);
+            $user = Craft::$app->getUsers()->getUserByUsernameOrEmail("registrant-$suffix@example.com");
+
+            if ($user) {
+                $createdUsers[] = $user;
+            }
+
+            try {
+                $plugin->getCustomers()->login("registrant-$suffix@example.com", 'a perfectly long password');
+                $signedIn = true;
+            } catch (ApiException) {
+                $signedIn = false;
+            }
+
+            return $result === ['verificationRequired' => true] && $user?->pending === true && !$signedIn
+                ?: json_encode(['result' => $result, 'pending' => $user?->pending, 'signedIn' => $signedIn]);
+        } finally {
+            $settings->allowCustomerRegistration = $was;
+        }
+    });
+
+    check('registration only sets the custom fields the merchant has opened', function() use ($plugin) {
+        $settings = $plugin->getSettings();
+        $was = $settings->registrationFields;
+        $settings->registrationFields = [['value' => 'nickname'], '  tier ', ''];
+
+        try {
+            return $settings->getRegistrationFields() === ['nickname', 'tier'] ?: json_encode($settings->getRegistrationFields());
+        } finally {
+            $settings->registrationFields = $was;
+        }
+    });
+
+    check('wrong passwords for a control panel account never count towards its lockout', function() use ($plugin) {
+        // Otherwise the storefront API is a way to lock the site's admins out.
+        $admin = User::find()->admin(true)->status(null)->one();
+        $before = (int)(new craft\db\Query())->select(['invalidLoginCount'])->from('{{%users}}')->where(['id' => $admin->id])->scalar();
+
+        for ($i = 0; $i < 3; $i++) {
+            try {
+                $plugin->getCustomers()->login($admin->email, 'definitely not the password');
+            } catch (ApiException) {
+            }
+        }
+
+        $after = (int)(new craft\db\Query())->select(['invalidLoginCount'])->from('{{%users}}')->where(['id' => $admin->id])->scalar();
+
+        return $after === $before ?: "the admin's failed-login count went from $before to $after";
+    });
+
+    check('repeated wrong passwords lock the account, as the control panel sign-in does', function() use ($plugin, $suffix, &$createdUsers) {
+        $user = new User();
+        $user->email = "lockout-$suffix@example.com";
+        $user->username = $user->email;
+        $user->newPassword = 'the right password here';
+        Craft::$app->getElements()->saveElement($user, false);
+        Craft::$app->getUsers()->activateUser($user);
+        $createdUsers[] = $user;
+
+        $limit = Craft::$app->getConfig()->getGeneral()->maxInvalidLogins;
+
+        for ($i = 0; $i <= $limit; $i++) {
+            try {
+                $plugin->getCustomers()->login($user->email, 'not it');
+            } catch (ApiException) {
+            }
+        }
+
+        try {
+            $plugin->getCustomers()->login($user->email, 'the right password here');
+
+            return "the right password still worked after $limit wrong ones";
+        } catch (ApiException $e) {
+            $fresh = Craft::$app->getUsers()->getUserById($user->id);
+
+            return $fresh->locked ?: 'refused, but the account is not marked locked';
+        }
+    });
+
+    check('sign-in is limited per address over HTTP, whatever the key allows', function() use ($auth) {
+        // Pre-fill this minute's bucket rather than send ten requests. The address the web side
+        // sees depends on the route in (DDEV's router, not loopback), so ask the request log.
+        api('GET', '', null, $auth);
+        $seen = (new craft\db\Query())->select(['ip'])->from('{{%headdy_log}}')->orderBy(['id' => SORT_DESC])->scalar();
+        $window = (int)floor(time() / 60);
+        $ips = array_filter(['127.0.0.1', '::1', is_string($seen) ? $seen : null]);
+
+        foreach ($ips as $ip) {
+            Craft::$app->getCache()->set("headdy.rate.auth.login.ip:$ip.$window", 10, 120);
+        }
+
+        try {
+            $response = api('POST', '/customers/sessions', ['loginName' => 'someone@example.com', 'password' => 'x'], $auth);
+
+            return $response['status'] === 429 && ($response['body']['error']['code'] ?? null) === ApiException::RATE_LIMITED
+                ?: 'HTTP ' . $response['status'] . ' ' . json_encode($response['body']);
+        } finally {
+            foreach ($ips as $ip) {
+                Craft::$app->getCache()->delete("headdy.rate.auth.login.ip:$ip.$window");
+            }
         }
     });
 

@@ -1,0 +1,21 @@
+includes:
+    - vendor/craftcms/phpstan/phpstan.neon
+
+parameters:
+    level: 4
+    paths:
+        - src
+    excludePaths:
+        - src/templates
+    ignoreErrors:
+        # Commerce's CustomerBehavior adds these to every user at runtime.
+        -
+            identifier: property.notFound
+            message: '#craft\\elements\\User::\$primary(Billing|Shipping)AddressId|craft\\elements\\User::\$primaryPaymentSourceId#'
+        # parent::runAction() declares only InvalidRouteException, but actions throw these through it.
+        -
+            identifier: catch.neverThrown
+            path: src/web/ApiController.php
+        # Array-shape option docs written as @var lists inside the method docblock.
+        -
+            identifier: varTag.misplaced

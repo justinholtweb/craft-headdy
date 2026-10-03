@@ -3,8 +3,8 @@
 namespace justinholtweb\headdy\controllers;
 
 use craft\web\Controller;
-use craft\web\Response;
 use justinholtweb\headdy\Plugin;
+use yii\web\Response;
 
 /**
  * The overview screen: is this API going to work, and where is it.
