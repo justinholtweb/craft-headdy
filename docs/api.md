@@ -1,3 +1,10 @@
+---
+title: API reference
+slug: api
+order: 40
+summary: The v1 contract — every endpoint, the response envelope, money, error codes, GraphQL and webhook signing.
+---
+
 # Headdy Storefront API — v1
 
 Everything below is mounted under `<base path>/v1`, which defaults to:

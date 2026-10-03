@@ -140,7 +140,12 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 cd ~/Sites/plugin-testing
 ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 133 checks
 ddev exec bash -c 'find /var/www/craft-headdy/src -name "*.php" -print0 | xargs -0 -n1 php -l'
+ddev exec bash -c 'cd /var/www/craft-headdy && vendor/bin/phpstan --memory-limit=1G && vendor/bin/ecs check'
 ```
+
+`composer.json` pins `config.platform.php` to 8.2 because the container runs 8.2. Without it a
+`composer update` on a newer host PHP writes a lock whose platform check fatals every vendor binary
+in the container.
 
 The suite switches to Pro for the bulk of the run, exercises Lite gating in its own section, and
 restores the edition, the settings and every fixture in a `finally`. It includes **live HTTP

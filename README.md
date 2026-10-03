@@ -160,8 +160,10 @@ browsers reject that pair, so Headdy refuses to save it.
 
 ## Documentation
 
-The full API contract — every endpoint, every error code, the GraphQL schema, webhook signing — is
-in [`docs/api.md`](docs/api.md).
+Full documentation is at
+[justinholt.com/plugins/craft-headdy/docs](https://justinholt.com/plugins/craft-headdy/docs), built
+from [`docs/`](docs). The API contract — every endpoint, every error code, the GraphQL schema,
+webhook signing — is [`docs/api.md`](docs/api.md).
 
 ## Console commands
 
@@ -191,7 +193,7 @@ cd ~/Sites/plugin-testing
 ddev exec php /var/www/craft-headdy/tests/integration/checks.php   # 133 checks
 ```
 
-Static analysis runs in the shared phpstan runner:
+Static analysis runs in the same container (`cd /var/www/craft-headdy` first):
 `vendor/bin/phpstan analyse --memory-limit=1G && vendor/bin/ecs check` (level 4, clean).
 
 The suite includes live HTTP round-trips against the real endpoint — key rejection, CORS preflight,
