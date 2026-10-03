@@ -295,6 +295,7 @@ listed in the **Fields registration may set** setting; anything else is ignored.
 | `rate_limited` | 429 | Over the per-minute limit. `Retry-After` is set. |
 | `invalid_json` | 400 | The body did not parse. |
 | `invalid_request` | 422 | Malformed parameters. |
+| `not_found` | 404 | No such product, variant, store, address or order, or no such route. |
 | `cart_not_found` | 404 | No cart token, or an unknown one. |
 | `cart_token_expired` | 401 | The token existed but has expired — start a new cart. |
 | `cart_completed` | 409 | The cart is already an order. |
@@ -313,6 +314,7 @@ listed in the **Fields registration may set** setting; anything else is ignored.
 | `customer_login_failed` | 401 | Bad credentials, or login is off. |
 | `customer_token_expired` | 401 | Access or refresh token is expired or revoked. |
 | `customer_exists` | 409 | An account already exists for that email. |
+| `customer_registration_disabled` | 403 | Registration is turned off in settings. |
 | `server_error` | 500 | Logged. The message is only echoed back in dev mode. |
 
 ## GraphQL — Pro

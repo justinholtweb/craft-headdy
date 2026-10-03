@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!-- handmade: hand-tuned deck -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Headdy — Plugin Store promos</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* The accent is ink, near-black — so ink is the ground, not the highlight. The slide sits a
+     step darker than the icon tile so the tile still reads, and contrast comes from a warm
+     off-white plus one restrained highlight (amber). Coral is used only for the "before" marks. */
+  :root {
+    --bg-0: #0c0f15;
+    --bg-1: #131720;
+    --accent: #1E2330;          /* the icon tile */
+    --accent-light: #2b3244;
+    --panel: rgba(30, 35, 48, 0.78);
+    --line: rgba(243, 239, 230, 0.10);
+    --off-white: #f3efe6;
+    --amber: #f2c46d;
+    --coral: #ef8a7a;
+    --muted: rgba(243, 239, 230, 0.66);
+    --faint: rgba(243, 239, 230, 0.44);
+  }
+
+  html { background: #000; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: var(--off-white);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- slide shell ---------------------------------------------------- */
+  .slide {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 86% 12%, rgba(242, 196, 109, 0.10) 0%, transparent 42%),
+      radial-gradient(ellipse at 70% 0%,  rgba(120, 140, 190, 0.12) 0%, transparent 40%),
+      radial-gradient(ellipse at 12% 90%, rgba(120, 140, 190, 0.08) 0%, transparent 42%),
+      linear-gradient(135deg, var(--bg-0) 0%, var(--bg-1) 45%, #171c27 70%, var(--bg-0) 100%);
+  }
+
+  /* Oversized watermark: the glyph alone, no tile */
+  .slide::after {
+    content: '';
+    position: absolute;
+    top: -16%;
+    left: -10%;
+    width: 1160px;
+    height: 1160px;
+    background: url('assets/watermark.svg') no-repeat center / contain;
+    opacity: 0.035;
+    pointer-events: none;
+  }
+
+  /* Hairline along the top edge */
+  .slide::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 6px;
+    background: linear-gradient(90deg, #3a4258, var(--off-white) 45%, var(--amber) 70%, #3a4258);
+    z-index: 5;
+  }
+
+  .inner {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 118px 130px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* ---- type ------------------------------------------------------------ */
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.30em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 30px;
+  }
+  .eyebrow .rule { width: 58px; height: 3px; border-radius: 2px; background: var(--amber); }
+  .eyebrow .pro {
+    margin-left: 4px;
+    padding: 6px 14px;
+    font-size: 17px;
+    letter-spacing: 0.16em;
+    border-radius: 999px;
+    border: 1px solid rgba(242, 196, 109, 0.55);
+    color: var(--amber);
+  }
+
+  h1, h2 {
+    font-family: 'Jersey 20', sans-serif;
+    font-weight: 400;
+    line-height: 0.92;
+    letter-spacing: 0.005em;
+    color: var(--off-white);
+  }
+  .hl { color: var(--amber); }
+
+  .lede { font-size: 32px; line-height: 1.48; color: var(--muted); }
+
+  .mono, code { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
+  .lede code, .points code, .note code {
+    font-size: 0.86em;
+    padding: 2px 9px;
+    border-radius: 7px;
+    background: rgba(243, 239, 230, 0.08);
+    color: var(--off-white);
+  }
+
+  /* ---- cover ----------------------------------------------------------- */
+  .cover .inner { gap: 100px; }
+  .cover .copy { flex: 1 1 auto; }
+  .cover h1 { font-size: 220px; margin-bottom: 22px; }
+  .cover .tagline {
+    font-family: 'Jersey 20', sans-serif;
+    font-size: 64px;
+    line-height: 1.02;
+    color: var(--off-white);
+    margin-bottom: 36px;
+  }
+  .cover .tagline .hl { color: var(--amber); }
+  .cover .lede { max-width: 30ch; font-size: 30px; }
+
+  .cover .mark {
+    flex: 0 0 auto;
+    width: 470px;
+    height: 470px;
+    border-radius: 106px;
+    /* the tile is close to the ground, so give its edge a ring and a lift */
+    box-shadow: 0 0 0 2px rgba(243, 239, 230, 0.14), 0 40px 90px rgba(0, 0, 0, 0.6);
+  }
+  .cover .mark img { width: 100%; height: 100%; display: block; }
+
+  .badges { display: flex; gap: 16px; margin-top: 50px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 26px;
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(243, 239, 230, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 999px;
+  }
+  .badge.price { border-color: rgba(242, 196, 109, 0.5); color: var(--off-white); }
+  .badge .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+
+  /* ---- feature slides -------------------------------------------------- */
+  .feature .copy { width: 720px; flex: 0 0 720px; }
+  .feature h2 { font-size: 84px; line-height: 1.0; margin-bottom: 30px; }
+  .feature .lede { max-width: 30ch; font-size: 29px; }
+  .feature h2.tight { font-size: 80px; line-height: 1.0; }
+
+  .points { list-style: none; margin-top: 40px; display: flex; flex-direction: column; gap: 16px; }
+  .points li {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    font-size: 25px;
+    line-height: 1.42;
+    color: rgba(243, 239, 230, 0.72);
+  }
+  .points li .tick {
+    flex: 0 0 auto;
+    margin-top: 11px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+
+  /* Right-hand panel */
+  .panel {
+    position: absolute;
+    top: 50%;
+    left: 920px;
+    right: 120px;
+    transform: translateY(-50%);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  /* ---- code card -------------------------------------------------------- */
+  .code {
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: rgba(17, 20, 28, 0.92);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  }
+  .code .bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 28px;
+    background: var(--accent);
+    border-bottom: 1px solid var(--line);
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 21px;
+    color: var(--muted);
+  }
+  .code .bar .verb { color: var(--amber); font-weight: 600; }
+  .code .bar .status { margin-left: auto; color: var(--off-white); }
+  .code pre {
+    margin: 0;
+    padding: 26px 30px;
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 23px;
+    line-height: 1.55;
+    color: rgba(243, 239, 230, 0.78);
+    white-space: pre;
+  }
+  .code.sm pre { font-size: 21px; }
+  .code .k { color: rgba(243, 239, 230, 0.55); }   /* keys */
+  .code .s { color: var(--amber); }                /* strings that matter */
+  .code .v { color: var(--off-white); }            /* plain values */
+  .code .c { color: rgba(243, 239, 230, 0.38); }   /* comments, ellipses */
+  .code .b { color: #f3efe6; font-weight: 600; }
+
+  .note { font-size: 23px; line-height: 1.5; color: var(--faint); }
+
+  /* ---- before / after (slide 2) ---------------------------------------- */
+  .versus .inner { flex-direction: column; align-items: stretch; justify-content: center; }
+  .versus h2 { font-size: 100px; margin-bottom: 52px; }
+  .vs { display: flex; gap: 56px; align-items: stretch; }
+  .vs .col { flex: 1 1 0; display: flex; flex-direction: column; }
+  .vs .label {
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    color: var(--faint);
+  }
+  .vs .after .label { color: var(--amber); }
+  .woes {
+    flex: 1 1 auto;
+    list-style: none;
+    padding: 30px 34px;
+    border-radius: 16px;
+    background: rgba(30, 35, 48, 0.45);
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .woes li {
+    display: flex;
+    gap: 18px;
+    font-size: 25px;
+    line-height: 1.4;
+    color: rgba(243, 239, 230, 0.62);
+  }
+  .woes li .x { flex: 0 0 auto; color: var(--coral); font-weight: 700; width: 18px; }
+  .woes li code { white-space: nowrap; font-size: 0.84em; color: rgba(243, 239, 230, 0.8); }
+  .vs .after .code { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .vs .after pre { flex: 1 1 auto; }
+
+  /* ---- mutation chips (slide 6) ----------------------------------------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip {
+    padding: 9px 16px;
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 19px;
+    border-radius: 9px;
+    background: rgba(30, 35, 48, 0.85);
+    border: 1px solid var(--line);
+    color: rgba(243, 239, 230, 0.74);
+  }
+  .chip.q { border-color: rgba(242, 196, 109, 0.4); color: var(--amber); }
+
+  /* ---- footer lockup --------------------------------------------------- */
+  .footer {
+    position: absolute;
+    left: 130px;
+    bottom: 58px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+  }
+  .footer img { width: 40px; height: 40px; border-radius: 9px; box-shadow: 0 0 0 1px rgba(243, 239, 230, 0.16); }
+  .footer b { color: rgba(243, 239, 230, 0.78); font-weight: 600; }
+
+  /* Only render the requested slide when screenshotting */
+  body.single .slide { display: none; }
+  body.single .slide.active { display: block; }
+
+  /* ---- control-panel screenshot card -------------------------------- */
+  .slide.cpcard { display: block; }
+  .cpcard .cpc-inner {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 112px 120px;
+    display: flex;
+    align-items: center;
+    gap: 70px;
+  }
+  .cpcard .cpc-copy { width: 640px; flex: 0 0 640px; }
+  .cpcard .cpc-h2 { font-size: 92px; margin-bottom: 28px; }
+  .cpcard .cpc-lede { font-size: 30px; line-height: 1.45; color: var(--muted); }
+  .cpcard .cpc-panel { flex: 1 1 auto; min-width: 0; }
+  .cpcard .cpc-frame {
+    border-radius: 14px;
+    overflow: hidden;
+    background: #e4edf6;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6), 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .cpcard .cpc-chrome {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 13px 18px;
+    background: linear-gradient(180deg, #262c3b 0%, #1E2330 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+  }
+  .cpcard .cpc-chrome b { width: 12px; height: 12px; border-radius: 50%; }
+  .cpcard .cpc-chrome b:nth-child(1) { background: #ff5f57; }
+  .cpcard .cpc-chrome b:nth-child(2) { background: #febc2e; }
+  .cpcard .cpc-chrome b:nth-child(3) { background: #28c840; }
+  .cpcard .cpc-chrome em {
+    margin-left: 12px;
+    font-style: normal;
+    font-size: 19px;
+    letter-spacing: 0.02em;
+    color: rgba(243, 239, 230, 0.5);
+  }
+  .cpcard .cpc-frame img { display: block; width: 100%; height: auto; }
+  .cpcard .cpc-frame.cpc-clip { max-height: 700px; position: relative; }
+  .cpcard .cpc-frame.cpc-clip img { object-fit: cover; object-position: top center; max-height: 660px; }
+  .cpcard .cpc-frame.cpc-clip::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 120px;
+    background: linear-gradient(180deg, rgba(228,237,246,0) 0%, rgba(228,237,246,0.92) 78%, #e4edf6 100%);
+  }
+  .cpcard .cpc-caption {
+    display: block;
+    margin-top: 20px;
+    font-size: 21px;
+    line-height: 1.45;
+    color: var(--faint);
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · Cover ============================================================ -->
+<section class="slide cover" data-n="1">
+  <div class="inner">
+    <div class="copy">
+      <div class="eyebrow"><span class="rule"></span> Craft Commerce 5</div>
+      <h1>Headdy</h1>
+      <p class="tagline">A <span class="hl">headless</span> storefront API<br>for Craft Commerce</p>
+      <p class="lede">A versioned REST API and GraphQL cart mutations, authenticated by bearer tokens
+        instead of session cookies.</p>
+      <div class="badges">
+        <span class="badge price"><span class="dot"></span> Lite $99 &nbsp;·&nbsp; Pro $199</span>
+        <span class="badge">Craft 5.3+ · Commerce 5 · PHP 8.2+</span>
+      </div>
+    </div>
+    <div class="mark"><img src="assets/icon.svg" alt=""></div>
+  </div>
+</section>
+
+<!-- 2 · The gap ========================================================== -->
+<section class="slide versus" data-n="2">
+  <div class="inner">
+    <div class="eyebrow"><span class="rule"></span> The gap</div>
+    <h2>One JSON request, <span class="hl">not a form post</span></h2>
+    <div class="vs">
+      <div class="col before">
+        <div class="label">Headless Commerce today</div>
+        <ul class="woes">
+          <li><span class="x">&times;</span><span>A form-encoded POST to <code>actions/commerce/cart/update-cart</code></span></li>
+          <li><span class="x">&times;</span><span>A PHP session cookie, so <code>credentials: 'include'</code> and a <code>SameSite</code> policy</span></li>
+          <li><span class="x">&times;</span><span>An extra round trip to fetch a CSRF token</span></li>
+          <li><span class="x">&times;</span><span>Responses shaped like Craft&rsquo;s internal element attributes</span></li>
+          <li><span class="x">&times;</span><span>A payment step JavaScript can&rsquo;t reach: Craft hashes the return URL into a Twig form</span></li>
+        </ul>
+      </div>
+      <div class="col after">
+        <div class="label">With Headdy</div>
+        <div class="code">
+          <div class="bar"><span class="verb">POST</span> /api/storefront/v1/carts <span class="status">201</span></div>
+<pre><span class="k">X-Headdy-Key:</span> <span class="v">hd_pk_…</span>
+
+<span class="v">{ "items": [{ "purchasableId": 123, "qty": 2 }] }</span>
+
+<span class="c">→</span> <span class="v">{ "success": true,</span>
+    <span class="k">"cart":</span> <span class="v">{</span> <span class="k">"token":</span> <span class="s">"hdc_…"</span><span class="v">,</span> <span class="c">… } }</span></pre>
+        </div>
+        <p class="note" style="margin-top:18px">No cookie, no CSRF token. Send <code>cart.token</code> back as <code>X-Headdy-Cart</code>.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<!-- 3 · Money and error codes ============================================ -->
+<section class="slide feature" data-n="3">
+  <div class="inner">
+    <div class="copy">
+      <div class="eyebrow"><span class="rule"></span> The contract</div>
+      <h2 class="tight">Money is an object.<br><span class="hl">Errors have a code.</span></h2>
+      <ul class="points">
+        <li><span class="tick"></span><span><code>amount</code> is a decimal string; <code>minorUnits</code> is the integer a payment processor wants</span></li>
+        <li><span class="tick"></span><span>Branch on <code>error.code</code>, never the message. Codes are contract and will not change inside <code>v1</code></span></li>
+        <li><span class="tick"></span><span>A failed cart change still returns the cart, so the UI can re&#8209;render without a second request</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="code">
+      <div class="bar">every amount, everywhere</div>
+<pre><span class="v">{</span> <span class="k">"amount":</span> <span class="s">"24.99"</span><span class="v">,</span> <span class="k">"minorUnits":</span> <span class="s">2499</span><span class="v">,</span>
+  <span class="k">"currency":</span> <span class="v">"USD"</span><span class="v">,</span> <span class="k">"formatted":</span> <span class="v">"$24.99"</span> <span class="v">}</span></pre>
+    </div>
+    <p class="note"><code>24.99</code> is not an IEEE 754 double, so it never travels as a JSON number.</p>
+    <div class="code sm">
+      <div class="bar"><span class="verb">POST</span> /carts/current/items <span class="status">422</span></div>
+<pre><span class="v">{</span>
+  <span class="k">"success":</span> <span class="v">false,</span>
+  <span class="k">"error":</span> <span class="v">{</span>
+    <span class="k">"code":</span> <span class="s">"purchasable_unavailable"</span><span class="v">,</span>
+    <span class="k">"message":</span> <span class="v">"“Blue T-shirt, Large” is not available."</span>
+  <span class="v">},</span>
+  <span class="k">"cart":</span> <span class="v">{</span> <span class="c">… as it stands …</span> <span class="v">}</span>
+<span class="v">}</span></pre>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<!-- 4 · Checkout state =================================================== -->
+<section class="slide feature" data-n="4">
+  <div class="inner">
+    <div class="copy">
+      <div class="eyebrow"><span class="rule"></span> Checkout</div>
+      <h2>Checkout that says<br><span class="hl">what&rsquo;s missing</span></h2>
+      <p class="lede">One GET returns what checkout still needs, the shipping methods and gateways that can
+        supply it, and the store&rsquo;s own rules.</p>
+      <ul class="points">
+        <li><span class="tick"></span><span><code>paymentFormParamName</code> ships in the payload &mdash; Commerce derives it from the gateway handle, and a client has no other way to know it</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="code">
+      <div class="bar"><span class="verb">GET</span> /api/storefront/v1/checkout <span class="status">200</span></div>
+<pre><span class="v">{</span> <span class="k">"checkout":</span> <span class="v">{</span>
+  <span class="k">"ready":</span> <span class="s">false</span><span class="v">,</span>
+  <span class="k">"missing":</span> <span class="v">[</span><span class="s">"shippingAddress"</span><span class="v">,</span> <span class="s">"shippingMethod"</span><span class="v">],</span>
+  <span class="k">"requiresPayment":</span> <span class="v">true,</span>
+  <span class="k">"amountDue":</span> <span class="v">{</span> <span class="k">"formatted":</span> <span class="v">"$49.98"</span><span class="v">,</span> <span class="c">… },</span>
+  <span class="k">"availableShippingMethods":</span> <span class="v">[</span> <span class="c">…</span> <span class="v">],</span>
+  <span class="k">"availableGateways":</span> <span class="v">[{</span>
+    <span class="k">"handle":</span> <span class="v">"stripe",</span>
+    <span class="k">"paymentFormParamName":</span> <span class="s">"paymentForm[stripe]"</span>
+  <span class="v">}],</span>
+  <span class="k">"store":</span> <span class="v">{</span> <span class="k">"requiresShippingAddress":</span> <span class="v">true,</span> <span class="c">… }</span>
+<span class="v">} }</span></pre>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<!-- 5 · Payment ========================================================== -->
+<section class="slide feature" data-n="5">
+  <div class="inner">
+    <div class="copy">
+      <div class="eyebrow"><span class="rule"></span> Payment</div>
+      <h2>Payment that<br><span class="hl">works headlessly</span></h2>
+      <p class="lede">Any Commerce gateway, off-site ones included. Their redirect comes back as JSON, not a
+        302 your fetch can&rsquo;t follow.</p>
+      <ul class="points">
+        <li><span class="tick"></span><span>Return URLs are checked against an allow-list, not a Twig hash</span></li>
+        <li><span class="tick"></span><span>The list starts empty, so nothing redirects until you allow it</span></li>
+        <li><span class="tick"></span><span>Honour <code>method</code>: <code>GET</code> navigates, <code>POST</code> submits <code>data</code> as a form</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="code">
+      <div class="bar"><span class="verb">POST</span> /api/storefront/v1/checkout/pay</div>
+<pre><span class="v">{</span> <span class="k">"gatewayId":</span> <span class="v">1,</span>
+  <span class="k">"returnUrl":</span> <span class="s">"https://shop.example.com/thanks"</span><span class="v">,</span>
+  <span class="k">"cancelUrl":</span> <span class="s">"https://shop.example.com/cart"</span> <span class="v">}</span></pre>
+    </div>
+    <div class="code">
+      <div class="bar">an off-site gateway answers <span class="status">200</span></div>
+<pre><span class="v">{</span> <span class="k">"success":</span> <span class="v">true,</span>
+  <span class="k">"redirect":</span> <span class="v">{</span>
+    <span class="k">"url":</span> <span class="v">"https://gateway.example/pay/…",</span>
+    <span class="k">"method":</span> <span class="s">"POST"</span><span class="v">,</span>
+    <span class="k">"data":</span> <span class="v">{</span> <span class="k">"sig":</span> <span class="v">"…"</span> <span class="v">}</span>
+  <span class="v">} }</span></pre>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<!-- 6 · GraphQL ========================================================== -->
+<section class="slide feature" data-n="6">
+  <div class="inner">
+    <div class="copy">
+      <div class="eyebrow"><span class="rule"></span> GraphQL <span class="pro">Pro</span></div>
+      <h2>The cart mutations<br><span class="hl">Commerce never shipped</span></h2>
+      <p class="lede">Eleven mutations and two queries on Craft&rsquo;s own GraphQL endpoint, only on schemas
+        you grant them to.</p>
+      <ul class="points">
+        <li><span class="tick"></span><span>They resolve through the same service as REST, so the two can&rsquo;t drift</span></li>
+        <li><span class="tick"></span><span>A <code>cartToken</code> argument, not a cookie</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="code">
+      <div class="bar">Craft&rsquo;s own GraphQL endpoint</div>
+<pre><span class="v">mutation {</span>
+  <span class="s">headdyCartAddItem</span><span class="v">(</span><span class="k">cartToken:</span> <span class="v">"hdc_…",</span>
+                    <span class="k">purchasableId:</span> <span class="v">456,</span> <span class="k">qty:</span> <span class="v">2) {</span>
+    <span class="v">lineItems { id description qty</span>
+                <span class="v">total { formatted } }</span>
+    <span class="v">totals { total { formatted } }</span>
+  <span class="v">}</span>
+<span class="v">}</span></pre>
+    </div>
+    <div class="chips">
+      <span class="chip">headdyCartCreate</span>
+      <span class="chip">headdyCartAddItem</span>
+      <span class="chip">headdyCartUpdateItem</span>
+      <span class="chip">headdyCartRemoveItem</span>
+      <span class="chip">headdyCartClear</span>
+      <span class="chip">headdyCartSetEmail</span>
+      <span class="chip">headdyCartSetAddresses</span>
+      <span class="chip">headdyCartApplyCoupon</span>
+      <span class="chip">headdyCartSetShippingMethod</span>
+      <span class="chip">headdyCartSetGateway</span>
+      <span class="chip">headdyCheckoutComplete</span>
+      <span class="chip q">headdyCart</span>
+      <span class="chip q">headdyCheckout</span>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<!-- 7 · control panel ==================================================== -->
+<section class="slide cpcard" data-n="7">
+  <div class="cpc-inner">
+    <div class="cpc-copy">
+      <div class="eyebrow"><span class="rule"></span> In the control panel</div>
+      <h2 class="cpc-h2">Finds the problem<br><span class="hl">before your front end does</span></h2>
+      <p class="cpc-lede">The Overview checks the setup &mdash; keys, gateways, CORS, redirect origins &mdash; and
+        shows the last 24 hours of traffic. The same check runs from the console and exits non&#8209;zero, so it
+        can gate a deploy.</p>
+    </div>
+    <div class="cpc-panel">
+      <figure class="cpc-frame">
+        <div class="cpc-chrome"><b></b><b></b><b></b><em>Headdy overview</em></div>
+        <img src="shots/headdy-overview.png" alt="">
+      </figure>
+    </div>
+  </div>
+  <div class="footer"><img src="assets/icon.svg" alt=""> <b>Headdy</b> &nbsp;·&nbsp; justinholt.com/plugins/craft-headdy</div>
+</section>
+
+<script>
+  var n = new URLSearchParams(location.search).get('s');
+  if (n) {
+    document.body.classList.add('single');
+    var el = document.querySelector('.slide[data-n="' + n + '"]');
+    if (el) el.classList.add('active');
+  }
+</script>
+</body>
+</html>
