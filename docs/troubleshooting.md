@@ -78,8 +78,9 @@ front end is probably firing an update on every keystroke. Debounce it.
 ## Customers can't sign in
 
 - **Allow customer sign-in** is off, or the key lacks `customer:write`.
-- The account is a control panel account. Those are refused on purpose, so a storefront credential
-  can never become a control panel session. Use a separate shopper account.
+- The account is a control panel account. Those are refused on purpose, with the same
+  `customer_login_failed` as a wrong password, so a storefront credential can never become a control
+  panel session. Use a separate shopper account.
 - The account is locked by Craft's own `maxInvalidLogins` and stays locked until the cooldown passes.
   Unlock it from the user's edit screen.
 - Every one of these returns the same `customer_login_failed`, so it can't be used to discover which
@@ -102,5 +103,7 @@ cart mutations** is on in the settings.
 - Deliveries run on Craft's queue. If the queue isn't running, nothing is sent. Check
   **Utilities → Queue Manager**.
 - The endpoint's delivery history shows each attempt's status code and error.
+- "Webhooks cannot be sent to a private or reserved address": outside dev mode, the endpoint must
+  resolve to a public address. Use the receiver's public hostname.
 - Verify signatures against the raw request body, not a re-serialized one. Re-encoding changes the
   bytes and the HMAC won't match.

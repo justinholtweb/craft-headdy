@@ -4,6 +4,8 @@ namespace justinholtweb\headdy\services;
 
 use Craft;
 use craft\commerce\elements\Order;
+use craft\db\Query;
+use craft\db\Table as CraftTable;
 use craft\elements\User;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Db;
@@ -230,12 +232,7 @@ class Tokens extends Component
 
         $user = Craft::$app->getUsers()->getUserById((int)$record->userId);
 
-        // A suspended or deactivated account keeps its rows but must stop being an identity.
-        if ($user === null || $user->suspended || $user->getStatus() !== User::STATUS_ACTIVE) {
-            return null;
-        }
-
-        return $user;
+        return $user !== null && $this->_mayStillActAs($user, $record) ? $user : null;
     }
 
     public function getCustomerTokenRecord(string $token): ?CustomerTokenRecord
@@ -287,13 +284,44 @@ class Tokens extends Component
 
         $user = Craft::$app->getUsers()->getUserById((int)$record->userId);
 
-        if ($user === null || $user->suspended || $user->getStatus() !== User::STATUS_ACTIVE) {
+        if ($user === null || !$this->_mayStillActAs($user, $record)) {
             return null;
         }
 
         $record->delete();
 
         return $this->issueCustomerToken($user, $key);
+    }
+
+    /**
+     * Whether a token row still speaks for its user.
+     *
+     * A suspended or deactivated account keeps its rows but must stop being an identity. So must
+     * one whose password has changed since the token was issued — a reset is what a customer does
+     * when they think someone else is in, and a stolen refresh token would otherwise rotate
+     * forever. Comparing against `lastPasswordChangeDate` covers every route to a new password —
+     * the control panel, a reset email, a front-end form — without listening for each one.
+     */
+    private function _mayStillActAs(User $user, CustomerTokenRecord $record): bool
+    {
+        if ($user->suspended || $user->getStatus() !== User::STATUS_ACTIVE || $user->passwordResetRequired) {
+            return false;
+        }
+
+        // Read from the table, not the element: a user loaded through UserQuery comes back with
+        // `lastPasswordChangeDate` unset, even when the column holds a date.
+        $changed = (new Query())
+            ->select(['lastPasswordChangeDate'])
+            ->from(CraftTable::USERS)
+            ->where(['id' => $user->id])
+            ->scalar();
+
+        $changedAt = $changed ? DateTimeHelper::toDateTime($changed, false) : false;
+        $issued = DateTimeHelper::toDateTime($record->dateCreated, false);
+
+        return $changedAt === false
+            || $issued === false
+            || $issued >= $changedAt;
     }
 
     public function revokeCustomerToken(string $token): bool
@@ -330,11 +358,14 @@ class Tokens extends Component
             ->delete(Table::CART_TOKENS, ['<', 'expiryDate', $cartCutoff])
             ->execute();
 
+        // A row is dead once nothing in it can be used. The access token expiring is not that: the
+        // refresh token in the same row lives on for weeks, and deleting the row with the access
+        // token would sign out every customer idle for more than an hour.
         $customers = (int)$db->createCommand()
             ->delete(Table::CUSTOMER_TOKENS, [
                 'or',
-                ['<', 'expiryDate', $now],
-                ['and', ['not', ['refreshExpiryDate' => null]], ['<', 'refreshExpiryDate', $now]],
+                ['and', ['refreshExpiryDate' => null], ['<', 'expiryDate', $now]],
+                ['<', 'refreshExpiryDate', $now],
                 ['revoked' => true],
             ])
             ->execute();

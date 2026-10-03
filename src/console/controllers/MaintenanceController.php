@@ -2,6 +2,7 @@
 
 namespace justinholtweb\headdy\console\controllers;
 
+use Craft;
 use craft\console\Controller;
 use craft\helpers\Console;
 use justinholtweb\headdy\Plugin;
@@ -45,6 +46,30 @@ class MaintenanceController extends Controller
         $result = Plugin::getInstance()->getTokens()->purgeExpired();
 
         $this->stdout("Purged {$result['carts']} cart token(s) and {$result['customers']} customer token(s).\n", Console::FG_GREEN);
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Signs a customer out of every storefront session, by email, username or user ID.
+     *
+     * Changing the password does this on its own; this is for when the password is fine but a
+     * device was lost.
+     */
+    public function actionRevokeCustomer(string $user): int
+    {
+        $users = Craft::$app->getUsers();
+        $found = ctype_digit($user) ? $users->getUserById((int)$user) : $users->getUserByUsernameOrEmail($user);
+
+        if ($found === null) {
+            $this->stderr("No user matches “{$user}”.\n", Console::FG_RED);
+
+            return ExitCode::DATAERR;
+        }
+
+        $revoked = Plugin::getInstance()->getTokens()->revokeCustomerTokensForUser((int)$found->id);
+
+        $this->stdout("Revoked $revoked customer token(s) for {$found->email}.\n", Console::FG_GREEN);
 
         return ExitCode::OK;
     }

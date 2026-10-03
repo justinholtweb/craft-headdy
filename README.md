@@ -176,6 +176,7 @@ headdy/keys/delete <publicKey>    delete a key
 headdy/maintenance                run every housekeeping task (put this on a schedule)
 headdy/maintenance/purge-tokens   delete expired cart and customer tokens
 headdy/maintenance/prune-log      delete log rows past the retention window
+headdy/maintenance/revoke-customer <email>   sign a customer out of every session
 headdy/maintenance/check          the configuration check; non-zero exit on a problem
 headdy/maintenance/routes         print the route table
 ```

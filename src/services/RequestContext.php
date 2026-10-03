@@ -28,6 +28,22 @@ class RequestContext extends Component
     private ?CartTokenRecord $_cartTokenRecord = null;
     private ?string $_cartToken = null;
     private ?string $_origin = null;
+    private bool $_public = false;
+
+    /**
+     * Marks this request as coming from a storefront caller — a REST request or a GraphQL
+     * resolver — rather than from Craft itself. Payloads built while this is set are going back
+     * to whoever holds a cart token, so they leave out what only the customer should see.
+     */
+    public function markPublic(): void
+    {
+        $this->_public = true;
+    }
+
+    public function isPublic(): bool
+    {
+        return $this->_public;
+    }
 
     public function setKey(?ApiKey $key): void
     {
@@ -104,5 +120,6 @@ class RequestContext extends Component
         $this->_cartToken = null;
         $this->_cartTokenRecord = null;
         $this->_origin = null;
+        $this->_public = false;
     }
 }

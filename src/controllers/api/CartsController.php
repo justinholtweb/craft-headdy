@@ -56,7 +56,7 @@ class CartsController extends ApiController
         }
 
         $plugin->getWebhooks()->dispatch(Webhook::TOPIC_CART_CREATED, [
-            'cart' => $plugin->getSerializer()->cart($cart),
+            'cart' => $plugin->getSerializer()->cart($cart, null, true),
         ], $cart->storeId);
 
         return $this->success(['cart' => $plugin->getSerializer()->cart($cart, $token)], 201);
@@ -256,7 +256,7 @@ class CartsController extends ApiController
         $token = $plugin->getRequestContext()->getCartToken();
 
         $plugin->getWebhooks()->dispatch(Webhook::TOPIC_CART_UPDATED, [
-            'cart' => $plugin->getSerializer()->cart($cart),
+            'cart' => $plugin->getSerializer()->cart($cart, null, true),
         ], $cart->storeId);
 
         return $this->success(['cart' => $plugin->getSerializer()->cart($cart, $token)]);
@@ -299,8 +299,19 @@ class CartsController extends ApiController
     private function _storeId(): ?int
     {
         $value = $this->param('storeId') ?? $this->request->getHeaders()->get('X-Headdy-Store');
+        $requested = $value !== null && $value !== '' ? (int)$value : null;
+        $keyStoreId = Plugin::getInstance()->getRequestContext()->getKey()?->storeId;
 
-        return $value !== null && $value !== '' ? (int)$value : null;
+        // A key restricted to one store creates carts there and nowhere else.
+        if ($keyStoreId !== null) {
+            if ($requested !== null && $requested !== $keyStoreId) {
+                throw ApiException::forbidden(Craft::t('headdy', 'That API key may not be used with this store.'));
+            }
+
+            return $keyStoreId;
+        }
+
+        return $requested;
     }
 
     private function _siteId(): ?int

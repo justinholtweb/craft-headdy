@@ -17,6 +17,7 @@ class SendWebhook extends BaseJob
     public ?int $webhookId = null;
     public string $topic = '';
     public array $payload = [];
+    public ?string $deliveryId = null;
 
     public function execute($queue): void
     {
@@ -28,7 +29,7 @@ class SendWebhook extends BaseJob
             return;
         }
 
-        $result = Plugin::getInstance()->getWebhooks()->deliver($webhook, $this->topic, $this->payload);
+        $result = Plugin::getInstance()->getWebhooks()->deliver($webhook, $this->topic, $this->payload, 1, $this->deliveryId);
 
         if (!$result['success']) {
             throw new \RuntimeException(sprintf(

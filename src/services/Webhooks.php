@@ -9,6 +9,7 @@ use craft\helpers\StringHelper;
 use DateInterval;
 use DateTime;
 use justinholtweb\headdy\db\Table;
+use justinholtweb\headdy\errors\WebhookTargetException;
 use justinholtweb\headdy\models\Webhook;
 use justinholtweb\headdy\Plugin;
 use justinholtweb\headdy\queue\jobs\SendWebhook;
@@ -130,6 +131,9 @@ class Webhooks extends Component
                 'webhookId' => $webhook->id,
                 'topic' => $topic,
                 'payload' => $payload,
+                // Fixed here, not per attempt, so a retried job carries the same ID and a receiver
+                // can tell a retry from a second event.
+                'deliveryId' => StringHelper::UUID(),
             ]));
 
             $queued++;
@@ -158,7 +162,7 @@ class Webhooks extends Component
      *
      * @return array{success: bool, statusCode: int|null, error: string|null}
      */
-    public function deliver(Webhook $webhook, string $topic, array $payload, int $attempt = 1): array
+    public function deliver(Webhook $webhook, string $topic, array $payload, int $attempt = 1, ?string $deliveryId = null): array
     {
         $body = Json::encode([
             'topic' => $topic,
@@ -171,16 +175,29 @@ class Webhooks extends Component
         $success = false;
 
         try {
+            $target = $this->resolveTarget((string)$webhook->url);
+
+            if (is_string($target)) {
+                throw new WebhookTargetException($target);
+            }
+
             $response = Craft::createGuzzleClient(['timeout' => 10, 'connect_timeout' => 5])
                 ->request('POST', $webhook->url, [
                     'headers' => [
                         'Content-Type' => 'application/json',
                         'User-Agent' => 'Headdy/' . Plugin::getInstance()->getVersion(),
                         'X-Headdy-Topic' => $topic,
+                        'X-Headdy-Delivery' => $deliveryId ?? StringHelper::UUID(),
                         'X-Headdy-Signature' => $this->sign($body, (string)$webhook->secret),
                     ],
                     'body' => $body,
                     'http_errors' => false,
+                    // A redirect would be followed to wherever the receiver says, past the address
+                    // check below.
+                    'allow_redirects' => false,
+                    // Connect to the address that was checked, not whatever the name resolves to
+                    // a moment later — otherwise DNS rebinding walks straight past the check.
+                    'curl' => $target['pin'] !== null ? [CURLOPT_RESOLVE => [$target['pin']]] : [],
                 ]);
 
             $statusCode = $response->getStatusCode();
@@ -189,13 +206,88 @@ class Webhooks extends Component
             if (!$success) {
                 $error = 'HTTP ' . $statusCode;
             }
-        } catch (\Throwable $e) {
+        } catch (WebhookTargetException $e) {
             $error = $e->getMessage();
+        } catch (\GuzzleHttp\Exception\ConnectException) {
+            // The transport's own message names the address and port it tried. Shown back to a
+            // control panel user, that turns "Send test" into a port scanner.
+            $error = Craft::t('headdy', 'Could not connect to the endpoint.');
+        } catch (\Throwable) {
+            $error = Craft::t('headdy', 'The request to the endpoint failed.');
         }
 
         $this->_recordDelivery($webhook, $topic, $body, $statusCode, $attempt, $success, $error);
 
         return ['success' => $success, 'statusCode' => $statusCode, 'error' => $error];
+    }
+
+    /**
+     * Checks that a webhook URL points somewhere public, and returns the address to pin to.
+     *
+     * Whoever can edit a webhook can make the server POST to any URL it names. Without this, that
+     * reaches the cloud metadata endpoint, the database port and every other internal service.
+     * Private, loopback, link-local and reserved addresses are refused unless dev mode is on, where
+     * a receiver on localhost is the normal case.
+     *
+     * @param bool $requireResolvable False at save time, where a receiver that is not live yet is
+     * fine; delivery always needs an address.
+     * @return array{pin: string|null}|string The pin for CURLOPT_RESOLVE, or why the URL is refused.
+     */
+    public function resolveTarget(string $url, bool $requireResolvable = true): array|string
+    {
+        $parts = parse_url($url);
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = (string)($parts['host'] ?? '');
+
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+            return Craft::t('headdy', 'A webhook URL must be an http or https address.');
+        }
+
+        if (Craft::$app->getConfig()->getGeneral()->devMode) {
+            return ['pin' => null];
+        }
+
+        $host = trim($host, '[]');
+        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : $this->_lookup($host);
+
+        if ($ips === []) {
+            if (!$requireResolvable) {
+                return ['pin' => null];
+            }
+
+            return Craft::t('headdy', 'The webhook host could not be resolved.');
+        }
+
+        foreach ($ips as $ip) {
+            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return Craft::t('headdy', 'Webhooks cannot be sent to a private or reserved address.');
+            }
+        }
+
+        $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+        $ip = $ips[0];
+
+        return ['pin' => filter_var($host, FILTER_VALIDATE_IP) ? null : sprintf('%s:%d:%s', $host, $port, str_contains($ip, ':') ? "[{$ip}]" : $ip)];
+    }
+
+    /**
+     * Every A and AAAA record for a host. All of them are checked, because the resolver may hand
+     * curl any one.
+     *
+     * @return string[]
+     */
+    private function _lookup(string $host): array
+    {
+        $ips = gethostbynamel($host) ?: [];
+        $records = @dns_get_record($host, DNS_AAAA) ?: [];
+
+        foreach ($records as $record) {
+            if (!empty($record['ipv6'])) {
+                $ips[] = $record['ipv6'];
+            }
+        }
+
+        return array_values(array_unique($ips));
     }
 
     /**

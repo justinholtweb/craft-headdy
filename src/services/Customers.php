@@ -52,24 +52,17 @@ class Customers extends Component
             ApiException::CUSTOMER_LOGIN_FAILED,
         );
 
-        if ($user === null || $user->password === null) {
-            throw $failure();
-        }
-
         // A control-panel account is not a storefront account. Handing out an API token for one
         // means a leaked storefront token is a leaked admin identity somewhere down the line.
         //
-        // Refused *before* Craft's authentication, which counts failures towards a lockout:
-        // otherwise anyone could lock the site's admins out by sending wrong passwords here. The
-        // explanation is only for someone who has the password; everyone else gets the same
-        // failure as any wrong guess, so this can't be used to find out which addresses are admins.
-        if ($user->admin || $user->can('accessCp')) {
-            if (Craft::$app->getSecurity()->validatePassword($password, $user->password)) {
-                throw ApiException::forbidden(
-                    Craft::t('headdy', 'Control panel accounts cannot sign in through the storefront API.'),
-                    ApiException::CUSTOMER_LOGIN_FAILED,
-                );
-            }
+        // It is refused without its password ever being checked. Checking it would count towards
+        // Craft's lockout — so anyone could lock the site's admins out from here — or, checked
+        // quietly, would answer "right password" with a different response, which is a lockout-free
+        // way to guess an admin's password. So it fails exactly as a wrong guess does.
+        if ($user === null || $user->password === null || $user->admin || $user->can('accessCp')) {
+            // Pay the cost of a password check anyway. Failing fast for an unknown account would
+            // tell a stopwatch which addresses are registered.
+            Craft::$app->getSecurity()->hashPassword($password !== '' ? $password : 'x');
 
             throw $failure();
         }

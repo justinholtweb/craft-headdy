@@ -25,6 +25,7 @@ use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\Plugin as Commerce;
 use craft\elements\User;
+use craft\helpers\Db;
 use justinholtweb\headdy\db\Table;
 use justinholtweb\headdy\errors\ApiException;
 use justinholtweb\headdy\helpers\Money;
@@ -1053,6 +1054,7 @@ try {
     section('Live HTTP — the cart lifecycle');
 
     $liveToken = null;
+    $liveHash = null;
 
     check('POST /carts creates a cart and returns a token', function() use ($auth, $variant, &$liveToken) {
         $response = api('POST', '/carts', ['items' => [['purchasableId' => $variant->id, 'qty' => 2]]], $auth);
@@ -1194,7 +1196,7 @@ try {
             ?: 'HTTP ' . $response['status'] . ' ' . json_encode($response['body']['error'] ?? []);
     });
 
-    check('a real payment completes the order and revokes the cart token', function() use ($auth, $commerce, $tokens, &$liveToken) {
+    check('a real payment completes the order and revokes the cart token', function() use ($auth, $commerce, $tokens, &$liveToken, &$liveHash) {
         $gateway = $commerce->getGateways()->getAllCustomerEnabledGateways()
             ->first(fn($g) => $g instanceof craft\commerce\gateways\Dummy);
 
@@ -1213,6 +1215,7 @@ try {
         }
 
         $order = $response['body']['order'] ?? [];
+        $liveHash = $response['body']['transaction']['hash'] ?? null;
 
         return ($order['isCompleted'] ?? false)
             && ($order['isPaid'] ?? false)
@@ -1636,6 +1639,244 @@ try {
                 Craft::$app->getCache()->delete("headdy.rate.auth.login.ip:$ip.$window");
             }
         }
+    });
+
+    // =====================================================================
+    section('Security regressions');
+
+    check('a wildcard in the cart email is refused, not matched against accounts', function() use ($carts, $key, $variant, &$createdOrders) {
+        // FILTER_VALIDATE_EMAIL accepts `*` and `%`; Craft's user lookup treats them as LIKE
+        // wildcards, so `*@example.com` once bound the cart to the first matching account.
+        $cart = $carts->createCart($key);
+        $createdOrders[] = $cart;
+        $carts->update($cart, ['addItems' => [['purchasableId' => $variant->id, 'qty' => 1]]]);
+        $refused = [];
+
+        foreach (['*@example.com', 'a%@example.com', '=someone@example.com'] as $email) {
+            try {
+                $carts->update($cart, ['email' => $email]);
+            } catch (ApiException $e) {
+                $refused[] = $e->statusCode === 422;
+            }
+        }
+
+        return $refused === [true, true, true] ?: 'refused: ' . json_encode($refused);
+    });
+
+    check('a cart token alone does not reveal whose account an email belongs to', function() use ($auth, $suffix, $variant) {
+        $created = api('POST', '/carts', ['items' => [['purchasableId' => $variant->id, 'qty' => 1]]], $auth);
+        $token = $created['body']['cart']['token'] ?? null;
+
+        if ($token === null) {
+            return 'could not create a cart: HTTP ' . $created['status'];
+        }
+
+        $response = api('PATCH', '/carts/current', ['email' => "customer-$suffix@example.com"], $auth + ['X-Headdy-Cart' => $token]);
+
+        return $response['status'] === 200
+            && array_key_exists('customer', $response['body']['cart'] ?? [])
+            && $response['body']['cart']['customer'] === null
+            ?: 'HTTP ' . $response['status'] . ' customer=' . json_encode($response['body']['cart']['customer'] ?? 'missing');
+    });
+
+    check('a signed-in customer still sees themselves on their own cart', function() use ($auth, $suffix, $variant) {
+        $session = api('POST', '/customers/sessions', ['loginName' => "customer-$suffix@example.com", 'password' => 'correct horse battery staple'], $auth);
+        $created = api('POST', '/carts', ['items' => [['purchasableId' => $variant->id, 'qty' => 1]]], $auth + ['X-Headdy-Customer' => $session['body']['token'] ?? '']);
+        $response = api('GET', '/carts/current', null, $auth + [
+            'X-Headdy-Cart' => $created['body']['cart']['token'] ?? '',
+            'X-Headdy-Customer' => $session['body']['token'] ?? '',
+        ]);
+
+        return ($response['body']['cart']['customer']['email'] ?? null) === "customer-$suffix@example.com"
+            ?: 'HTTP ' . $response['status'] . ' customer=' . json_encode($response['body']['cart']['customer'] ?? null);
+    });
+
+    check('an anonymous caller cannot ask for account writes on a registered customer\'s cart', function() use ($carts, $key, $suffix, &$createdOrders) {
+        $owner = User::find()->email("customer-$suffix@example.com")->one();
+        $cart = $carts->createCart($key, null, null, $owner);
+        $createdOrders[] = $cart;
+        $carts->update($cart, ['saveShippingAddressOnOrderComplete' => true, 'saveBillingAddressOnOrderComplete' => true]);
+
+        return !$cart->saveShippingAddressOnOrderComplete && !$cart->saveBillingAddressOnOrderComplete
+            ?: 'a cart token alone switched on address-book writes for someone else';
+    });
+
+    check('a saved card left on a cart is dropped when nobody proves they own it', function() use ($carts, $key, $plugin, &$createdOrders) {
+        $cart = $carts->createCart($key);
+        $createdOrders[] = $cart;
+        $cart->paymentSourceId = 999999;
+
+        $apply = new ReflectionMethod($plugin->getPayments(), '_applyPaymentSelection');
+        $apply->invoke($plugin->getPayments(), $cart, []);
+
+        return $cart->paymentSourceId === null ?: 'the stale payment source survived a payment attempt with no customer token';
+    });
+
+    check('replaying complete-payment does not re-send the paid webhooks', function() use ($plugin, $suffix, &$liveHash, &$createdWebhooks) {
+        if ($liveHash === null) {
+            return 'no transaction from the live payment to replay';
+        }
+
+        $webhook = new Webhook(['name' => "Replay $suffix", 'url' => 'https://example.com/headdy-hook', 'topics' => Webhook::allTopics(), 'enabled' => true]);
+
+        if (!$plugin->getWebhooks()->saveWebhook($webhook)) {
+            return 'could not save the fixture webhook: ' . json_encode($webhook->getErrors());
+        }
+
+        $createdWebhooks[] = $webhook;
+        $queued = fn() => (int)(new craft\db\Query())->from('{{%queue}}')->where(['like', 'job', '"webhookId";i:' . $webhook->id . ';'])->count();
+        $before = $queued();
+
+        try {
+            $plugin->getPayments()->complete($liveHash);
+            $plugin->getPayments()->complete($liveHash);
+            $after = $queued();
+        } finally {
+            Craft::$app->getDb()->createCommand()->delete('{{%queue}}', ['like', 'job', '"webhookId";i:' . $webhook->id . ';'])->execute();
+        }
+
+        return $after === $before ?: ($after - $before) . ' webhook(s) queued by replaying an already-paid transaction';
+    });
+
+    check('a real status change still sends order.statusChanged, once', function() use ($plugin, $commerce, $suffix, &$liveHash, &$createdWebhooks) {
+        $order = $liveHash !== null ? $commerce->getTransactions()->getTransactionByHash($liveHash)?->getOrder() : null;
+        $other = $order !== null ? collect($commerce->getOrderStatuses()->getAllOrderStatuses($order->storeId))
+            ->first(fn($status) => (int)$status->id !== (int)$order->orderStatusId) : null;
+
+        if ($other === null) {
+            return 'no paid order with a second status to move it to';
+        }
+
+        $webhook = new Webhook(['name' => "Status $suffix", 'url' => 'https://example.com/headdy-status', 'topics' => [Webhook::TOPIC_ORDER_STATUS_CHANGED], 'enabled' => true]);
+        $plugin->getWebhooks()->saveWebhook($webhook);
+        $createdWebhooks[] = $webhook;
+        $match = ['like', 'job', '"webhookId";i:' . $webhook->id . ';'];
+
+        try {
+            $order->orderStatusId = $other->id;
+            Craft::$app->getElements()->saveElement($order, false);
+            $afterChange = (int)(new craft\db\Query())->from('{{%queue}}')->where($match)->count();
+
+            Craft::$app->getElements()->saveElement($order, false);
+            $afterResave = (int)(new craft\db\Query())->from('{{%queue}}')->where($match)->count();
+        } finally {
+            Craft::$app->getDb()->createCommand()->delete('{{%queue}}', $match)->execute();
+        }
+
+        return $afterChange === 1 && $afterResave === 1
+            ?: "queued $afterChange after the change and $afterResave after a save that changed nothing";
+    });
+
+    check('a control panel account is refused exactly like a wrong password, even with the right one', function() use ($plugin, $suffix, &$createdUsers) {
+        $user = new User();
+        $user->email = "cp-$suffix@example.com";
+        $user->username = $user->email;
+        $user->newPassword = 'the admin password is right';
+        $user->admin = true;
+        Craft::$app->getElements()->saveElement($user, false);
+        Craft::$app->getUsers()->activateUser($user);
+        $createdUsers[] = $user;
+        $seen = [];
+
+        foreach (['the admin password is right', 'and this one is wrong'] as $password) {
+            try {
+                $plugin->getCustomers()->login($user->email, $password);
+                $seen[] = 'signed in';
+            } catch (ApiException $e) {
+                $seen[] = $e->errorCode . '/' . $e->statusCode . '/' . $e->getMessage();
+            }
+        }
+
+        return $seen[0] === $seen[1] && str_starts_with($seen[0], ApiException::CUSTOMER_LOGIN_FAILED . '/401/')
+            ?: 'the right and wrong passwords were distinguishable: ' . json_encode($seen);
+    });
+
+    check('changing the password signs out every existing customer token', function() use ($plugin, $tokens, $suffix, &$createdUsers) {
+        $user = new User();
+        $user->email = "rotate-$suffix@example.com";
+        $user->username = $user->email;
+        $user->newPassword = 'the first password here';
+        Craft::$app->getElements()->saveElement($user, false);
+        Craft::$app->getUsers()->activateUser($user);
+        $createdUsers[] = $user;
+
+        $pair = $plugin->getCustomers()->login($user->email, 'the first password here');
+        // Token issue and password change are compared to the second.
+        sleep(1);
+
+        $fresh = Craft::$app->getUsers()->getUserById($user->id);
+        $fresh->newPassword = 'a completely new password';
+        Craft::$app->getElements()->saveElement($fresh, false);
+
+        return $tokens->getUserByCustomerToken($pair['token']) === null
+            && $tokens->refreshCustomerToken($pair['refreshToken']) === null
+            ?: 'a token issued before the password change still works';
+    });
+
+    check('the scheduled purge keeps a session whose access token expired but refresh token did not', function() use ($plugin, $tokens, $suffix) {
+        $pair = $plugin->getCustomers()->login("customer-$suffix@example.com", 'correct horse battery staple');
+        $hash = hash('sha256', $pair['token']);
+
+        Craft::$app->getDb()->createCommand()
+            ->update(Table::CUSTOMER_TOKENS, ['expiryDate' => Db::prepareDateForDb(new DateTime('-2 hours'))], ['tokenHash' => $hash])
+            ->execute();
+
+        $tokens->purgeExpired();
+
+        return $tokens->refreshCustomerToken($pair['refreshToken']) !== null
+            ?: 'the purge deleted a row whose refresh token was still good, signing the customer out';
+    });
+
+    check('a "*" redirect origin still refuses a non-web scheme', function() use ($carts, $key, $plugin, &$createdOrders) {
+        $cart = $carts->createCart($key);
+        $createdOrders[] = $cart;
+        $settings = $plugin->getSettings();
+        $was = $settings->allowedRedirectOrigins;
+        $settings->allowedRedirectOrigins = ['*'];
+
+        try {
+            try {
+                $plugin->getPayments()->validateRedirect('javascript://x/%0aalert(1)', $cart);
+
+                return 'a javascript: URL passed under "*"';
+            } catch (ApiException $e) {
+                return $plugin->getPayments()->validateRedirect('https://anywhere.example/thanks', $cart) === 'https://anywhere.example/thanks'
+                    ?: 'an https URL was refused under "*"';
+            }
+        } finally {
+            $settings->allowedRedirectOrigins = $was;
+        }
+    });
+
+    check('a webhook cannot target a private or metadata address outside dev mode', function() use ($plugin) {
+        $general = Craft::$app->getConfig()->getGeneral();
+        $was = $general->devMode;
+        $general->devMode = false;
+
+        try {
+            $service = $plugin->getWebhooks();
+            $refused = array_map(fn($url) => is_string($service->resolveTarget($url)), [
+                'http://169.254.169.254/latest/meta-data/',
+                'http://127.0.0.1:6379/',
+                'http://10.0.0.5/',
+                'http://[::1]/',
+                'ftp://example.com/',
+            ]);
+
+            return !in_array(false, $refused, true) ?: 'refused: ' . json_encode($refused);
+        } finally {
+            $general->devMode = $was;
+        }
+    });
+
+    check('a key tied to one store cannot create a cart in another', function() use ($plugin, $store, $suffix, &$createdKeys) {
+        $storeKey = new ApiKey(['name' => "Store-bound $suffix", 'scopes' => ApiKey::defaultScopes(), 'storeId' => $store->id]);
+        $plugin->getKeys()->saveKey($storeKey);
+        $createdKeys[] = $storeKey;
+
+        $response = api('POST', '/carts', [], ['X-Headdy-Key' => $storeKey->publicKey, 'X-Headdy-Store' => (string)($store->id + 1000)]);
+
+        return $response['status'] === 403 ?: 'HTTP ' . $response['status'];
     });
 
     // =====================================================================

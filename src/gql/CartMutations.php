@@ -281,6 +281,7 @@ class CartMutations extends Mutation
     public static function guard(string $action = 'edit'): void
     {
         $plugin = Plugin::getInstance();
+        $plugin->getRequestContext()->markPublic();
 
         if (!$plugin->getSettings()->enabled) {
             throw new \GraphQL\Error\UserError(Craft::t('headdy', 'The storefront API is turned off.'));

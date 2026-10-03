@@ -108,6 +108,21 @@ Registration is off by default. When you switch it on:
 Saving a customer's address book, viewing their orders and using a saved card all need a customer
 token, not just a cart token. Otherwise anyone holding a cart token could charge someone else's card.
 
+Changing a customer's password signs out every session issued before the change, whether the change
+came from the control panel, a reset email or your front end. To sign someone out without changing
+their password:
+
+```bash
+php craft headdy/maintenance/revoke-customer ada@example.com
+```
+
+## Rate limits behind a proxy
+
+Sign-in, registration, token refresh and order lookup are always limited per client address. Craft
+reads that address from `X-Forwarded-For` only when the request comes from a trusted proxy. Set
+Craft's `trustedHosts` to your load balancer or CDN, so a client can't send its own header and get a
+new address on every request.
+
 ## GraphQL *(Pro)*
 
 The cart mutations are added to Craft's own GraphQL endpoint, but only for schemas you grant them to.
@@ -128,6 +143,10 @@ in **Utilities → Queue Manager** and can be retried from there.
 
 Topics: `cart.created`, `cart.updated`, `cart.completed`, `order.paid`, `order.statusChanged`,
 `payment.failed`. See the [API reference](api) for how to verify a signature.
+
+Outside dev mode, an endpoint has to resolve to a public address. Private, loopback and cloud
+metadata addresses are refused, so whoever can edit webhooks can't use them to reach internal
+services. In dev mode a receiver on `localhost` works as you'd expect.
 
 ## Permissions
 

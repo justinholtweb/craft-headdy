@@ -34,8 +34,16 @@ Initial release.
   rotation and explicit revocation.
 - No session, no cookie and no CSRF token on any API request.
 - Customer sign-in goes through Craft's own authentication, so wrong passwords count towards Craft's
-  lockout; control panel accounts are refused before anything is counted, so the API can't lock an
-  admin out.
+  lockout. Control panel accounts are refused without their password being checked, exactly like a
+  wrong guess, so the API can neither lock an admin out nor test an admin's password.
+- Changing a password signs out every customer token issued before it.
+  `headdy/maintenance/revoke-customer` signs a customer out everywhere.
+- A cart response only names its customer to that customer's own token, and the cart email can't
+  contain lookup wildcards.
+- A saved card on a cart is re-checked on every payment attempt, not only when first chosen.
+- An API key restricted to one store can only create and read that store's carts.
+- Webhooks carry an `X-Headdy-Delivery` ID for de-duplication, fire `order.paid` once per order
+  however often a payment is completed, and refuse private and internal addresses outside dev mode.
 - Credential endpoints (sign-in, registration, refresh, order lookup) are rate limited per address,
   and sign-in per account name, independently of the API key's limit.
 - Registration follows Craft's "Verify email addresses" setting: a new account is pending and gets

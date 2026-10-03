@@ -5,6 +5,7 @@ namespace justinholtweb\headdy\models;
 use craft\base\Model;
 use craft\helpers\StringHelper;
 use DateTime;
+use justinholtweb\headdy\Plugin;
 
 /**
  * An outbound webhook endpoint.
@@ -55,7 +56,21 @@ class Webhook extends Model
             [['name', 'url'], 'required'],
             [['url'], 'url', 'defaultScheme' => 'https'],
             [['topics'], 'validateTopics'],
+            [['url'], 'validateTarget'],
         ];
+    }
+
+    /**
+     * Refused at save as well as at delivery, so a merchant finds out now rather than from an
+     * empty delivery history.
+     */
+    public function validateTarget(string $attribute): void
+    {
+        $target = Plugin::getInstance()->getWebhooks()->resolveTarget((string)$this->$attribute, false);
+
+        if (is_string($target)) {
+            $this->addError($attribute, $target);
+        }
     }
 
     public function validateTopics(string $attribute): void

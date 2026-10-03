@@ -76,16 +76,33 @@ JSON-ish columns are plain `text` and encoded by hand — Craft's query builder 
   default, so off-site gateways are unusable until the merchant opts in. That is the safe default,
   not an oversight.
 - **A saved payment source needs a customer token**, not just a cart token. Otherwise anyone holding
-  a cart token could charge someone else's card.
+  a cart token could charge someone else's card. That includes a source *already saved on the cart*
+  from an earlier, failed attempt — `Payments::pay()` re-checks it, and drops it, every time.
+- **A cart token proves a cart, not an account.** `cart.customer` is `null` unless the caller's
+  customer token is that customer (`Serializer::_customerForCaller()`); webhooks pass
+  `trusted: true` and get the full stub. Likewise the `save*AddressOnOrderComplete` flags are
+  ignored on a registered customer's cart without their token.
+- **A password change kills every customer token issued before it** — checked against
+  `lastPasswordChangeDate` at resolution, so every route to a new password is covered without an
+  event listener. `headdy/maintenance/revoke-customer` is for a lost device.
+- **Webhook URLs must resolve to public addresses** outside dev mode, the checked IP is pinned with
+  `CURLOPT_RESOLVE` (DNS rebinding), redirects are not followed, and transport errors are shown
+  generically — otherwise "Send test" is an internal port scanner.
 - **Login failures are indistinguishable** — same code, same message, whether the account is
   missing, suspended, or the password is wrong. Otherwise the endpoint enumerates customers.
 - **Sign-in goes through `User::authenticate()`** so Craft's lockout counts it — but a control panel
   account is refused *before* that, or the API becomes a way to lock admins out. (The test suite did
-  exactly that to the harness admin before the order was fixed.) A CP account only gets the
-  explanatory 403 when its password is right.
+  exactly that to the harness admin before the order was fixed.) Its password is **never checked**:
+  an explanatory 403 for the right password was a lockout-free admin password oracle, so a CP
+  account fails exactly like a wrong guess. Unknown accounts pay a hash's cost too, so timing
+  doesn't enumerate. The per-account throttle is keyed on the resolved user ID, not the string.
 - **Registration honours Craft's `users.requireEmailVerification`**: pending account, activation
   email, `202 {verificationRequired: true}`, no tokens. `fields` is filtered by the
   `registrationFields` setting.
+- **Registration still answers `409 customer_exists`.** That does reveal an address is registered —
+  but so does Craft's own registration form, and a shopper told "check your email" for an account
+  they forgot they had is a support ticket. It is off by default and limited to 5 a minute per
+  address. A deliberate trade, flagged by the pre-release audit; don't "fix" it silently.
 - **GraphQL is a schema component** (`headdyCarts:read` / `:edit`), checked when the schema is built
   *and* in every resolver (`CartMutations::guard()`).
 
@@ -112,6 +129,13 @@ JSON-ish columns are plain `text` and encoded by hand — Craft's query builder 
 - **`User::getAddresses()` returns an `ElementCollection`**, so `array_map()` over it silently
   returns nothing. And `AddressQuery` has no owner param — fetch by ID and check `ownerId` yourself,
   because a query that ignores an unknown condition returns every address on the site.
+- **`ensureUserByEmail()` looks the user up through `Db::parseParam()`**, where `*` and `%` are LIKE
+  wildcards — and `FILTER_VALIDATE_EMAIL` accepts both in a local part. `*@gmail.com` bound a cart
+  to the first matching account. `Carts::_applyEmail` refuses `* % , \` and a leading `= < > !`.
+- **`completePayment()` returns true for a transaction that already succeeded**, so a replayed
+  `complete-payment` re-ran the completion side effects. Webhooks fire on the *transition* only.
+- **A customer token row holds both halves.** Purging it when the 1-hour access token expired
+  deleted the 30-day refresh token with it and signed everyone out on each maintenance run.
 - **Craft registers no JSON body parser by default**, so `getBodyParams()` cannot see a JSON body
   unless the site edits `config/app.php`. Headdy parses the raw body itself.
 - **Primary billing/shipping address IDs live in a Commerce table**, not on the user element —

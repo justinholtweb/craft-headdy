@@ -5,7 +5,9 @@ namespace justinholtweb\headdy;
 use Craft;
 use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
+use craft\commerce\db\Table as CommerceTable;
 use craft\commerce\elements\Order;
+use craft\db\Query;
 use craft\events\ModelEvent;
 use craft\events\RegisterGqlMutationsEvent;
 use craft\events\RegisterGqlQueriesEvent;
@@ -439,10 +441,32 @@ class Plugin extends BasePlugin
      */
     private function _registerOrderStatusWebhook(): void
     {
+        // Status IDs as stored before each save, keyed by order ID. A completed order is saved for
+        // many reasons — a payment, a note, a recalculation — and only some of them change its
+        // status. Firing on every save sent `order.statusChanged` on a replayed payment.
+        $before = [];
+
+        Event::on(
+            Order::class,
+            Order::EVENT_BEFORE_SAVE,
+            function(ModelEvent $event) use (&$before) {
+                /** @var Order $order */
+                $order = $event->sender;
+
+                if ($order->id && $order->isCompleted && !$order->propagating) {
+                    $before[$order->id] = (new Query())
+                        ->select(['orderStatusId'])
+                        ->from(CommerceTable::ORDERS)
+                        ->where(['id' => $order->id])
+                        ->scalar();
+                }
+            }
+        );
+
         Event::on(
             Order::class,
             Order::EVENT_AFTER_SAVE,
-            function(ModelEvent $event) {
+            function(ModelEvent $event) use (&$before) {
                 /** @var Order $order */
                 $order = $event->sender;
 
@@ -450,8 +474,16 @@ class Plugin extends BasePlugin
                     return;
                 }
 
+                $was = $before[$order->id] ?? null;
+                unset($before[$order->id]);
+
+                // `null` is a first save as a completed order — a status was just assigned.
+                if ($was !== null && $was !== false && (int)$was === (int)$order->orderStatusId) {
+                    return;
+                }
+
                 $this->getWebhooks()->dispatch(Webhook::TOPIC_ORDER_STATUS_CHANGED, [
-                    'order' => $this->getSerializer()->cart($order),
+                    'order' => $this->getSerializer()->cart($order, null, true),
                 ], $order->storeId);
             }
         );

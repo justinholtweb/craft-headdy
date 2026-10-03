@@ -47,7 +47,11 @@ class CustomersController extends ApiController
 
             if ($action->id === 'login') {
                 $loginName = strtolower(trim((string)($this->param('loginName') ?? $this->param('email') ?? '')));
-                $this->_throttle('login:' . sha1($loginName), $action->id, self::LOGIN_ATTEMPTS_PER_ACCOUNT);
+
+                // Keyed on the account, not the string typed: an account reachable by username
+                // and by email would otherwise get two budgets.
+                $userId = $loginName !== '' ? Craft::$app->getUsers()->getUserByUsernameOrEmail($loginName)?->id : null;
+                $this->_throttle('login:' . ($userId !== null ? 'u' . $userId : sha1($loginName)), $action->id, self::LOGIN_ATTEMPTS_PER_ACCOUNT);
             }
         }
 
@@ -97,6 +101,8 @@ class CustomersController extends ApiController
             $user = Plugin::getInstance()->getTokens()->getUserByCustomerToken($result['token']);
 
             if ($user !== null) {
+                // The password just proved who this is, so the cart may name them back.
+                Plugin::getInstance()->getRequestContext()->setCustomer($user);
                 Plugin::getInstance()->getCustomers()->attachCartToCustomer($cart, $user);
                 $result['cart'] = Plugin::getInstance()->getSerializer()->cart(
                     $cart,

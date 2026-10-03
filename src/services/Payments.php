@@ -7,6 +7,7 @@ use craft\commerce\elements\Order;
 use craft\commerce\errors\CurrencyException;
 use craft\commerce\errors\PaymentException;
 use craft\commerce\helpers\PaymentForm as PaymentFormHelper;
+use craft\commerce\models\PaymentSource;
 use craft\commerce\models\Transaction;
 use craft\commerce\Plugin as Commerce;
 use craft\helpers\UrlHelper;
@@ -153,6 +154,8 @@ class Payments extends Component
             $redirect = '';
             $redirectData = [];
             $transaction = null;
+            $wasCompleted = (bool)$order->isCompleted;
+            $wasPaid = (bool)$order->getIsPaid();
 
             try {
                 $commerce->getPayments()->processPayment($order, $paymentForm, $redirect, $transaction, $redirectData);
@@ -162,7 +165,7 @@ class Payments extends Component
                 }
 
                 $plugin->getWebhooks()->dispatch(Webhook::TOPIC_PAYMENT_FAILED, [
-                    'order' => $serializer->cart($order),
+                    'order' => $serializer->cart($order, null, true),
                     'message' => $e->getMessage(),
                 ], $order->storeId);
 
@@ -175,7 +178,7 @@ class Payments extends Component
                 );
             }
 
-            return $this->_result($order, $transaction, $redirect, $redirectData);
+            return $this->_result($order, $transaction, $redirect, $redirectData, $wasCompleted, $wasPaid);
         });
     }
 
@@ -197,6 +200,9 @@ class Payments extends Component
         }
 
         $error = '';
+        $before = $transaction->getOrder();
+        $wasCompleted = (bool)$before?->isCompleted;
+        $wasPaid = (bool)$before?->getIsPaid();
 
         if (!$commerce->getPayments()->completePayment($transaction, $error)) {
             throw new ApiException(
@@ -210,7 +216,7 @@ class Payments extends Component
 
         $order = $transaction->getOrder();
 
-        return $this->_result($order, $transaction, (string)$order?->returnUrl, []);
+        return $this->_result($order, $transaction, (string)$order?->returnUrl, [], $wasCompleted, $wasPaid);
     }
 
     /**
@@ -258,7 +264,12 @@ class Payments extends Component
         $allowed = Plugin::getInstance()->getSettings()->getAllowedRedirectOrigins();
 
         foreach ($allowed as $candidate) {
-            if (strcasecmp($candidate, $origin) === 0 || $candidate === '*') {
+            // `*` means any web origin, not any scheme: `javascript://x/%0a…` parses with a host
+            // and would otherwise be handed to the front end as a URL to navigate to. A custom
+            // app scheme still works when it is listed by name.
+            $isWeb = in_array(strtolower($parts['scheme']), ['http', 'https'], true);
+
+            if (strcasecmp($candidate, $origin) === 0 || ($candidate === '*' && $isWeb)) {
                 return $url;
             }
         }
@@ -306,27 +317,47 @@ class Payments extends Component
 
         if (!empty($params['paymentSourceId'])) {
             $source = $commerce->getPaymentSources()->getPaymentSourceById((int)$params['paymentSourceId']);
-            $orderCustomerId = $order->getCustomer()?->id;
 
-            // A saved card belongs to a person, and the only proof of who is calling is the
-            // customer token. Without one, a stored source is off limits no matter whose cart this
-            // is — otherwise anyone holding a cart token could charge someone else's card.
-            $authenticated = Plugin::getInstance()->getRequestContext()->getCustomer();
-
-            $allowed = $source !== null
-                && $orderCustomerId !== null
-                && $authenticated !== null
-                && $authenticated->id === $orderCustomerId
-                && $source->getCustomer()?->id === $orderCustomerId;
-
-            if (!$allowed) {
+            if (!$this->_mayUsePaymentSource($order, $source)) {
                 throw ApiException::forbidden(
                     Craft::t('headdy', 'That payment source cannot be used with this order.'),
                 );
             }
 
             $order->setPaymentSource($source);
+        } elseif ($order->paymentSourceId) {
+            // A source chosen on an earlier attempt — one that was declined, or stopped by a 409 —
+            // is still saved on the cart. Whoever is paying now has to pass the same test, or a
+            // cart token alone would be enough to retry on the owner's card.
+            try {
+                $saved = $order->getPaymentSource();
+            } catch (\Throwable) {
+                // Commerce throws rather than answer for a guest, or for a source that no longer
+                // belongs to the customer. Either way it is not one this caller may use.
+                $saved = null;
+            }
+
+            if (!$this->_mayUsePaymentSource($order, $saved)) {
+                $order->setPaymentSource(null);
+            }
         }
+    }
+
+    /**
+     * A saved card belongs to a person, and the only proof of who is calling is the customer
+     * token. Without one, a stored source is off limits no matter whose cart this is — otherwise
+     * anyone holding a cart token could charge someone else's card.
+     */
+    private function _mayUsePaymentSource(Order $order, ?PaymentSource $source): bool
+    {
+        $orderCustomerId = $order->getCustomer()?->id;
+        $authenticated = Plugin::getInstance()->getRequestContext()->getCustomer();
+
+        return $source !== null
+            && $orderCustomerId !== null
+            && $authenticated !== null
+            && $authenticated->id === $orderCustomerId
+            && $source->getCustomer()?->id === $orderCustomerId;
     }
 
     private function _buildPaymentForm(Order $order, \craft\commerce\base\GatewayInterface $gateway, array $params)
@@ -378,7 +409,11 @@ class Payments extends Component
         $order->setPaymentAmount((float)$params['paymentAmount']);
     }
 
-    private function _result(?Order $order, ?Transaction $transaction, string $redirect, array $redirectData): array
+    /**
+     * @param bool $wasCompleted Whether the order was already complete before this call
+     * @param bool $wasPaid Whether it was already paid before this call
+     */
+    private function _result(?Order $order, ?Transaction $transaction, string $redirect, array $redirectData, bool $wasCompleted, bool $wasPaid): array
     {
         $plugin = Plugin::getInstance();
         $serializer = $plugin->getSerializer();
@@ -394,13 +429,18 @@ class Payments extends Component
             // not by a token a browser might still be holding.
             $plugin->getTokens()->revokeCartTokensForOrder((int)$order->id);
 
-            $plugin->getWebhooks()->dispatch(Webhook::TOPIC_CART_COMPLETED, [
-                'order' => $serializer->cart($order),
-            ], $order->storeId);
+            // Only on the transition. Commerce's completePayment() answers true for a transaction
+            // that already succeeded, so a replayed `complete-payment` would otherwise re-send
+            // `order.paid` every time — and a receiver that fulfils on it ships again.
+            if (!$wasCompleted) {
+                $plugin->getWebhooks()->dispatch(Webhook::TOPIC_CART_COMPLETED, [
+                    'order' => $serializer->cart($order, null, true),
+                ], $order->storeId);
+            }
 
-            if ($order->getIsPaid()) {
+            if (!$wasPaid && $order->getIsPaid()) {
                 $plugin->getWebhooks()->dispatch(Webhook::TOPIC_ORDER_PAID, [
-                    'order' => $serializer->cart($order),
+                    'order' => $serializer->cart($order, null, true),
                 ], $order->storeId);
             }
         }

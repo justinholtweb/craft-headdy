@@ -75,7 +75,11 @@ class Serializer extends Component
      * The same shape either way — `isCompleted` is what tells them apart. A front end that renders
      * a cart summary can render an order confirmation with the same component.
      */
-    public function cart(Order $order, ?string $token = null): array
+    /**
+     * @param bool $trusted Whether the payload is going somewhere other than the caller — a signed
+     * webhook — and so may name the customer even when the caller has not proved they are them.
+     */
+    public function cart(Order $order, ?string $token = null, bool $trusted = false): array
     {
         $currency = self::currencyFor($order);
 
@@ -107,7 +111,7 @@ class Serializer extends Component
             'shippingMethod' => $this->selectedShippingMethod($order, $currency),
             'gatewayId' => $order->gatewayId,
             'paymentSourceId' => $order->paymentSourceId,
-            'customer' => $this->customerStub($order->getCustomer()),
+            'customer' => $trusted ? $this->customerStub($order->getCustomer()) : $this->_customerForCaller($order),
             'notices' => $this->notices($order),
         ];
 
@@ -387,6 +391,26 @@ class Serializer extends Component
         }
 
         return $data;
+    }
+
+    /**
+     * The order's customer, if the caller has shown they are that customer.
+     *
+     * A cart token proves possession of a cart, not of an account. Naming the account to anyone
+     * holding the token would tell a caller who set `email` to a stranger's address that the
+     * address is registered, and whose it is. Outside a storefront request — the control panel,
+     * the console, a queue job — there is no such caller and the stub is returned as before.
+     */
+    private function _customerForCaller(Order $order): ?array
+    {
+        $context = Plugin::getInstance()->getRequestContext();
+        $customer = $order->getCustomer();
+
+        if ($context->isPublic() && ($customer === null || $context->getCustomer()?->id !== $customer->id)) {
+            return null;
+        }
+
+        return $this->customerStub($customer);
     }
 
     public function customerStub(?User $user): ?array

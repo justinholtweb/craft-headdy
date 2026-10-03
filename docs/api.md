@@ -182,7 +182,8 @@ other way to know it, so it ships in the payload.
 Craft's own checkout hashes return URLs into a Twig form, which a JSON client cannot reproduce.
 Headdy validates them against **Allowed redirect origins** in the plugin settings instead. That list
 is empty by default, so off-site gateways cannot be driven from the API until you say where returns
-may land. Relative paths are always accepted.
+may land. Relative paths are always accepted. `*` allows any `http` or `https` origin; a custom app scheme has to be
+listed by name.
 
 On success:
 
@@ -253,8 +254,14 @@ the response — so a shopper who logs in mid-checkout keeps their basket.
 
 **Sign-in uses Craft's lockout.** Wrong passwords count towards `maxInvalidLogins`, exactly as a
 control panel sign-in does, so a locked account stays locked until Craft's cooldown passes. A
-control panel account is refused before anything is counted, so the storefront API can't be used to
-lock an admin out.
+control panel account is refused without its password being checked at all — it gets the same
+`401 customer_login_failed` as a wrong guess — so the storefront API can neither lock an admin out
+nor be used to guess an admin's password. A password change signs out every customer token issued
+before it.
+
+**`cart.customer` names the account only to that account.** On a request without the matching
+customer token it is `null`, even when the cart's email belongs to a registered customer — a cart
+token proves you hold a cart, not who you are.
 
 **Credential endpoints are rate limited per address**, whatever the API key's own limit: sign-in 10
 a minute (and 5 per account name), registration 5, refresh 30, order lookup 20. Over the limit is a
@@ -355,11 +362,16 @@ Deliveries are queued, so a slow receiver never holds a checkout open. Each carr
 
 ```
 X-Headdy-Topic: order.paid
+X-Headdy-Delivery: 5d1c…  (a UUID, the same on every retry of one delivery)
 X-Headdy-Signature: t=1717171717,v1=<hmac-sha256 of "<t>.<body>">
 ```
 
 Verify the HMAC with the endpoint's signing secret, and reject anything more than a few minutes old
-— the timestamp is inside the signed material precisely so replay is detectable.
+— the timestamp is inside the signed material precisely so replay is detectable. De-duplicate on
+`X-Headdy-Delivery`: a retried delivery carries the same ID.
+
+Outside dev mode, an endpoint must resolve to a public address — private, loopback, link-local and
+reserved ranges are refused — and redirects from it are not followed.
 
 Topics: `cart.created`, `cart.updated`, `cart.completed`, `order.paid`, `order.statusChanged`,
 `payment.failed`.

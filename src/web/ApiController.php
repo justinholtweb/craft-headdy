@@ -111,6 +111,7 @@ abstract class ApiController extends Controller
         $plugin = Plugin::getInstance();
         $settings = $plugin->getSettings();
 
+        $plugin->getRequestContext()->markPublic();
         $this->_resolveOrigin($settings);
 
         // Preflight is answered before anything else: a browser sends no key, no token and no body
@@ -507,6 +508,14 @@ abstract class ApiController extends Controller
         $cart = $tokens->getCartByToken($token);
 
         if ($cart === null) {
+            return;
+        }
+
+        // A key tied to one store only ever sees that store's carts, whichever key issued the
+        // token. Treated as not found rather than forbidden: from this key's side, it isn't there.
+        $keyStoreId = Plugin::getInstance()->getRequestContext()->getKey()?->storeId;
+
+        if ($keyStoreId !== null && (int)$cart->storeId !== $keyStoreId) {
             return;
         }
 

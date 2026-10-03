@@ -501,7 +501,12 @@ class Carts extends Component
             return;
         }
 
-        if (!is_string($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        // FILTER_VALIDATE_EMAIL accepts `*` and `%` in the local part, and `ensureUserByEmail()`
+        // looks the user up through Db::parseParam(), where those are LIKE wildcards — so
+        // `*@gmail.com` would bind the cart to whichever account matched first. Characters that
+        // mean something to parseParam() are refused outright, not escaped: escaping the lookup
+        // would still leave ensureUserByEmail() to run the unescaped one.
+        if (!is_string($email) || !filter_var($email, FILTER_VALIDATE_EMAIL) || preg_match('/[*%,\\\\]|^[=<>!]/', $email)) {
             throw ApiException::invalid(
                 Craft::t('headdy', 'That email address is not valid.'),
                 ['email' => [Craft::t('headdy', 'That email address is not valid.')]],
@@ -614,8 +619,16 @@ class Carts extends Component
             $cart->setFieldValues($params['fields']);
         }
 
+        // Each of these writes to the customer's account when the order completes. On a cart
+        // belonging to a registered account, only that customer — proven by their token — may
+        // ask for it; otherwise a cart token alone could plant an address in someone's book.
+        $customer = $cart->getCustomer();
+        $mayTouchAccount = $customer === null
+            || !$customer->getIsCredentialed()
+            || Plugin::getInstance()->getRequestContext()->getCustomer()?->id === $customer->id;
+
         foreach (['registerUserOnOrderComplete', 'saveBillingAddressOnOrderComplete', 'saveShippingAddressOnOrderComplete'] as $flag) {
-            if (array_key_exists($flag, $params)) {
+            if (array_key_exists($flag, $params) && $mayTouchAccount) {
                 $cart->$flag = (bool)$params[$flag];
             }
         }
